@@ -29,8 +29,9 @@ function rescale!(u, t, integrator)
     return lyapunov
 end
 
-""" Poincaré section condition """
-sectionCondition(u, t, integrator) = u[2]
+""" Poincaré section conditions """
+sectionCondition1(u, t, integrator) = u[1]
+sectionCondition2(u, t, integrator) = u[2]
 
 """ Hit Poincaré section """
 function section!(integrator)
@@ -59,7 +60,7 @@ function energyConservation!(resid, u, params, t)
 end
 
 """ Solves individual trajectory with given initial conditions x"""
-function SolveTrajectory(initialCondition, parameters; solver=TsitPap8(), savePath="", verbose=false, showFigures=false, relaxationTime=10, regularThreshold=1e-3, relativeFluctuationThreshold=1e-5, maxPSPoints=10000, tolerance=1e-10, saveStep=2, lyapunovSeriesLength=200)
+function SolveTrajectory(initialCondition, parameters; solver=TsitPap8(), section=2, savePath="", verbose=false, showFigures=false, relaxationTime=10, regularThreshold=1e-3, relativeFluctuationThreshold=1e-5, maxPSPoints=10000, tolerance=1e-10, saveStep=2, lyapunovSeriesLength=200)
     x0 = zeros(20)
     x0[1:4] = initialCondition
     x0[5:end] = Matrix{Float64}(I, 4, 4)
@@ -70,7 +71,9 @@ function SolveTrajectory(initialCondition, parameters; solver=TsitPap8(), savePa
     append!(params, rand(lyapunovSeriesLength))                                             # Queue with latest Lyapunov exponents (initialized as a random series)
 
     fnc = ODEFunction(EquationOfMotion!)
-    problem = ODEProblem(fnc, x0, (0, 1e6), params)
+    problem = ODEProblem(fnc, x0, (0, 1e5), params)
+
+    sectionCondition = section == 1 ? sectionCondition1 : sectionCondition2
 
     lyapunovs = SavedValues(Float64, Float64)                                              # For a graph with the time evolution of Lyapunov exponents
     callback = CallbackSet(ManifoldProjection(energyConservation!, save=false), SavingCallback(rescale!, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, section!, nothing, save_positions=(false, true)))
@@ -105,11 +108,12 @@ function SolveTrajectory(initialCondition, parameters; solver=TsitPap8(), savePa
         display(plot(pannel1, pannel2, layout=2))
     end
 
-    return zip(solution[1,:], solution[3,:]), lyapunov, zip(lyapunovs.t, lyapunovs.saveval)
+    result = section == 1 ? zip(solution[2,:], solution[4,:]) : zip(solution[1,:], solution[3,:])
+    return result, lyapunov, zip(lyapunovs.t, lyapunovs.saveval)
 end
 
 """ Solve all trajectories for a given energy at a lattice P,Q = (1...dimension, 1...dimension) """
-function SolveEnergy(energy, parameters, dimension; showFigures=false, verbose=false, randomize=false, kwargs...)
+function SolveEnergy(energy, parameters, dimension; min=-2.0, max=2.0, section=2, showFigures=false, verbose=false, randomize=false, kwargs...)
     sectionLyapunov = zeros(Float64, dimension, dimension)
     countLyapunov = zeros(Int32, dimension, dimension)
 
@@ -136,13 +140,13 @@ function SolveEnergy(energy, parameters, dimension; showFigures=false, verbose=f
         end
         
         # Randomize - IC selected randomly from a calculated cell, otherwise it is always taken from the cell centre
-        P = 4.0 * (ip - (randomize ? (1.5 + rand()) : 1.0)) / (dimension - 1.0) - 2.0
-        Q = 4.0 * (iq - (randomize ? (1.5 + rand()) : 1.0)) / (dimension - 1.0) - 2.0
+        P = (max - min) * (ip - (randomize ? (1.5 + rand()) : 1.0)) / (dimension - 1.0) + min
+        Q = (max - min) * (iq - (randomize ? (1.5 + rand()) : 1.0)) / (dimension - 1.0) + min
     
-        x = [P, 0.0, Q, missing]
+        x = section == 1 ? [0.0, P, missing, Q] : [P, 0.0, Q, missing]
         if InitialCondition!(x, energy, parameters)
             x = collect(skipmissing(x))
-            ps, lyapunov = SolveTrajectory(x, parameters; showFigures=showFigures, verbose=verbose, kwargs...)
+            ps, lyapunov = SolveTrajectory(x, parameters; showFigures=showFigures, verbose=verbose, section=section, kwargs...)
         else
             ps = []
             lyapunov = -0.01                        # Unable to find initial condition - return small negative lyapunov exponent
@@ -183,21 +187,26 @@ function SolveEnergy(energy, parameters, dimension; showFigures=false, verbose=f
 end
 
 """ Calculates Poincaré section for a given energy and number of trajectories """
-function PoincareSection(energy, parameters, numTrajectories; showFigures=true, verbose=false, kwargs...)
+function PoincareSection(energy, parameters, numTrajectories; min=-2.0, max=2.0, section=2, maxICNumber=10000, showFigures=true, verbose=false, kwargs...)
     figure = scatter()
 
     trajectory = 0
-    while trajectory < numTrajectories
-        P = 4.0 * rand() - 2.0
-        Q = 4.0 * rand() - 2.0
+    while trajectory < numTrajectories && maxICNumber > 0
+        P = (max - min) * rand() + min
+        Q = (max - min) * rand() + min
 
-        x = [P, 0.0, Q, missing]
+        maxICNumber -= 1
+
+        x = section == 1 ? [0.0, P, missing, Q] : [P, 0.0, Q, missing]
         if !InitialCondition!(x, energy, parameters)
             continue
         end
         
         x = collect(skipmissing(x))
-        ps, lyapunov = SolveTrajectory(x, parameters; showFigures=false, verbose=verbose, relativeFluctuationThreshold=0, regularThreshold=0, kwargs...)
+
+        println("IC = $x, E = $(Energy(x, parameters))")
+
+        ps, lyapunov = SolveTrajectory(x, parameters; section=section, showFigures=false, verbose=verbose, relativeFluctuationThreshold=0, regularThreshold=0, kwargs...)
         trajectory += 1
 
         figure = scatter!(collect(ps), label="Λ=$(round(lyapunov, digits=3))", markersize=3, markeralpha=0.8, markerstrokewidth=0)
