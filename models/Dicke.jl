@@ -15,7 +15,7 @@ function InitialCondition!(x0, e, parameters)
     P, p, Q, q = x0
     λ, δ, ω, ω₀  = parameters
 
-    if numMissingValues == 1 && ismissing(q)
+    if numMissingValues == 1 && ismissing(q) && p == 0.0
         s2 = 1.0 - 0.25 * (P*P + Q*Q)
         if s2 < 0
             return false
@@ -34,6 +34,60 @@ function InitialCondition!(x0, e, parameters)
         q = (sign * sqrt(discriminant) - b) / ω
         x0[4] = q
 
+        return true
+    end
+
+    if numMissingValues == 1 && ismissing(Q) && P == 0.0
+        a = λ * (1.0 - δ) * p
+        b = 0.5 * ω * (p * p + q * q)
+
+        discriminant1 = a * a - (e - b) * (e - 2.0 * ω₀ - b)
+
+        if discriminant1 < 0
+            return false
+        end
+
+        c = e * ω₀ + a * a - ω₀ * b
+        d = ω₀ * ω₀ + a * a
+
+        discriminant2p = 2.0 * (c + a * sqrt(discriminant1)) / d
+        discriminant2m = 2.0 * (c - a * sqrt(discriminant1)) / d
+
+        if discriminant2p < 0 && discriminant2m < 0
+            return false
+        end
+
+        # Not all of the found initial conditions have the desired energy; let's select the correct ones
+        ics = []
+
+        x0[3] = sqrt(discriminant2m)
+        if isapprox(e, Energy(x0, parameters))
+            append!(ics, x0[3])
+        end
+
+        x0[3] = -sqrt(discriminant2m)
+        if isapprox(e, Energy(x0, parameters))
+            append!(ics, x0[3])
+        end
+    
+        x0[3] = sqrt(discriminant2p)
+        if isapprox(e, Energy(x0, parameters))
+            append!(ics, x0[3])
+        end
+    
+        x0[3] = -sqrt(discriminant2p)
+        if isapprox(e, Energy(x0, parameters))
+            append!(ics, x0[3])
+        end
+
+        println(ics)
+
+        if length(ics) == 0
+            x0[3] = missing
+            return false
+        end        
+
+        x0[3] = rand(ics)
         return true
     end
 
