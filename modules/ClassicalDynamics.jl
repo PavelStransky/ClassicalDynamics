@@ -60,7 +60,7 @@ function energyConservation!(resid, u, params, t)
 end
 
 """ Solves individual trajectory with given initial conditions x"""
-function SolveTrajectory(initialCondition, parameters; solver=TsitPap8(), section=2, savePath="", verbose=false, showFigures=false, relaxationTime=10, regularThreshold=1e-3, relativeFluctuationThreshold=1e-5, maxPSPoints=10000, tolerance=1e-10, saveStep=2, lyapunovSeriesLength=200)
+function SolveTrajectory(initialCondition, parameters; solver=TsitPap8(), section=2, savePath=nothing, verbose=false, showFigures=false, relaxationTime=10, regularThreshold=1e-3, relativeFluctuationThreshold=1e-5, maxPSPoints=10000, tolerance=1e-10, saveStep=2, lyapunovSeriesLength=200)
     x0 = zeros(20)
     x0[1:4] = initialCondition
     x0[5:end] = Matrix{Float64}(I, 4, 4)
@@ -81,8 +81,10 @@ function SolveTrajectory(initialCondition, parameters; solver=TsitPap8(), sectio
 
     # Save all unstable or nonconvergent trajectories
     if !(solution.retcode == :Success || solution.retcode == :Terminated || (params[10] >= maxPSPoints && relativeFluctuationThreshold >= 0))
-        open(savePath * "_nonconvergent_trajectories.txt", "a") do io
-            println(io, "$(solution.retcode)\t$initialCondition")
+        if !isnothing(savePath)
+            open(savePath * "_nonconvergent_trajectories.txt", "a") do io
+                println(io, "$(solution.retcode)\t$initialCondition")
+            end
         end
 
         return [], 0    # Unstable trajectories can be distinguished later because their LE is exactly 0
@@ -122,6 +124,9 @@ function SolveEnergy(energy, parameters, dimension; min=-2.0, max=2.0, section=2
     infoStep = convert(Int32, round(dimension / 10))
     startTime = time_ns()
 
+    crossings = 0
+
+    println("Starting $parameters, E=$energy, dim=$dimension")
     for ip = 1:dimension, iq = 1:dimension
 
         if ip % infoStep == 0 && iq == dimension
@@ -132,7 +137,7 @@ function SolveEnergy(energy, parameters, dimension; min=-2.0, max=2.0, section=2
                 end
             end
 
-            println("E=$energy, trajectories=$trajectories ($(round(100 * numNonzero / (dimension * dimension)))%)")
+            println("Trajectories=$trajectories ($(round(100 * numNonzero / (dimension * dimension)))%)")
         end
 
         if countLyapunov[ip, iq] > 0
@@ -156,6 +161,10 @@ function SolveEnergy(energy, parameters, dimension; min=-2.0, max=2.0, section=2
         countLyapunov[ip, iq] = 1
 
         if lyapunov > 0
+            crossings += 1
+        end
+
+        if lyapunov > 0
             trajectories += 1                       # Number of convergent trajectories
         end
 
@@ -171,6 +180,8 @@ function SolveEnergy(energy, parameters, dimension; min=-2.0, max=2.0, section=2
                 sectionLyapunov[iip, iiq] += lyapunov
                 countLyapunov[iip, iiq] += 1
             end
+
+            crossings += 1
         end
     end
 
@@ -181,7 +192,7 @@ function SolveEnergy(energy, parameters, dimension; min=-2.0, max=2.0, section=2
         display(contourf(sectionLyapunov, title="E = $energy, trajectories = $trajectories", zlims=(-0.1, 1)))
     end
 
-    println("E=$energy, trajectories=$trajectories, crossings=$(sum(countLyapunov)) (Finished in $(round((time_ns()-startTime)/1e9))s)")
+    println("Finished $parameters, E=$energy, trajectories=$trajectories, crossings=$crossings (Finished in $(round((time_ns()-startTime)/1e9))s)")
 
     return sectionLyapunov, trajectories
 end

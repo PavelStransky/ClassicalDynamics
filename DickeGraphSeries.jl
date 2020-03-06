@@ -1,7 +1,7 @@
 using Distributed
 using Plots
 
-workers = 2
+workers = 5
 
 if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
