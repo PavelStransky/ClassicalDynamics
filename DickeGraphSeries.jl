@@ -1,8 +1,10 @@
 using Distributed
 using Plots
 
-if nprocs() <= 4
-    addprocs(5 - nprocs())
+workers = 2
+
+if nprocs() <= workers
+    addprocs(workers + 1 - nprocs())
 end
 
 @everywhere include("models\\Dicke.jl")
@@ -14,9 +16,9 @@ end
 function DickeEnergies()
     savePath = "d:\\results\\Dicke"
 
-    @sync @distributed for energy = -5:0.01:3
-        parameters = [2.0, 1.0, 1.0, 1.0]
-        dimension = 501
+    @sync @distributed for energy = -1:0.1:10
+        parameters = [1.0, 1.0, 1.0, 1.0]
+        dimension = 101
 
         sectionLyapunov, trajectories = SolveEnergy(energy, parameters, dimension, savePath=savePath)
 
@@ -26,3 +28,16 @@ function DickeEnergies()
         end    
     end
 end    
+
+savePath = "d:\\results\\Dicke"
+parameters = [1.0, 1.0, 1.0, 1.0]
+dimension = 101
+
+c = Channel()
+x = @async put!(remotecall_fetch(SolveEnergy, 2, 0, parameters, dimension, savePath="d:\\results\\Dicke"))
+global i = 0.0
+while !isready(c)
+    global i
+    i += 0.1
+end
+println(x)
