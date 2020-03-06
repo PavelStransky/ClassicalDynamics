@@ -272,29 +272,32 @@ function TestTrajectory(x, parameters)
     rosenbrockW = [Rosenbrock23(), Rosenbrock32(), RosenbrockW6S4OS(), ROS34PW1a(), ROS34PW1b(), ROS34PW2(), ROS34PW3()]
     stabilizedRK = [ROCK2(), ROCK4(), RKC(), SERK2(), ESERK4(), ESERK5()]
 
-    for method in rosenbrockW
+    for method in explicitRK
         x0 = zeros(20)
         x0[1:4] = x
         x0[5:end] = Matrix{Float64}(I, 4, 4)
 
-        params = [parameters..., Energy(x0, parameters), 0, 1e-5, 0, 1]   # λ, δ, ω, ω₀, 5=energy, 6=relaxationTime, 7=maximumError, 8=num points in the Poincaré section, 9=current Lyapunov exponent
-        append!(params, rand(200))                                            # Queue with latest Lyapunov exponents (initialized as a random series)
+
+        params = [parameters..., Energy(x0, parameters), 0, 1e-5, 0.001, 10000, 0, 1]         
+        # λ, δ, ω, ω₀, 5=energy, 6=relaxationTime, 7=relativeFluctuationThreshold, 8=regularThreshold, 9=maximum number of points in Poincare section, 
+        #              10=num points in the Poincaré section, 11=current Lyapunov exponent 
+        append!(params, rand(200))                                            
 
         fnc = ODEFunction(EquationOfMotion!)
         problem = ODEProblem(fnc, x0, (0, 1e6), params)
 
         lyapunovs = SavedValues(Float64, Float64)                                              # For a graph of Lyapunov exponents
-        callback = CallbackSet(SavingCallback(rescale!, lyapunovs, saveat=2:2:1e6), ContinuousCallback(sectionCondition, section!, nothing, save_positions=(false, true)), ManifoldProjection(energyConservation!, save=false))
-        time = @elapsed solution = solve(problem, method, reltol=1e-8, abstol=1e-8, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=1E8, isoutofdomain=CheckDomain, verbose=true)
+        callback = CallbackSet(SavingCallback(rescale!, lyapunovs, saveat=2:2:1e6), ContinuousCallback(sectionCondition2, section!, nothing, save_positions=(false, true)), ManifoldProjection(energyConservation!, save=false))
+        time = @elapsed solution = solve(problem, method, reltol=1e-8, abstol=1e-8, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=1E8, isoutofdomain=CheckDomain, verbose=true)    
 
-        lyapunov = mean(params[10:end])
-        lv = var(params[10:end])
+        lyapunov = mean(params[12:end])
+        lv = var(params[12:end])
 
         println("Time = $time, Lyapunov = $lyapunov ± $lv")
         println(solution.retcode)
 
         p = plot!(lyapunovs.t, lyapunovs.saveval, lw=2, label="$method l=$(round(lyapunov, digits=3)) t=$(round(time, digits=1)) $(solution.retcode)", ylims=(0,1))
         display(p)
-        savefig(p, "d:\\results\\rosenbrockW.png")
+        #savefig(p, "d:\\results\\rosenbrockW.png")
     end
 end
