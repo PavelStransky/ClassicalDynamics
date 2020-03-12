@@ -77,13 +77,13 @@ function SolveTrajectory(initialCondition, parameters; solver=TsitPap8(), sectio
 
     lyapunovs = SavedValues(Float64, Float64)                                              # For a graph with the time evolution of Lyapunov exponents
     callback = CallbackSet(ManifoldProjection(energyConservation!, save=false), SavingCallback(rescale!, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, section!, nothing, save_positions=(false, true)))
-    time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=1E8, isoutofdomain=CheckDomain, verbose=verbose)
+    time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=2E6, isoutofdomain=CheckDomain, verbose=verbose)
 
     # Save all unstable or nonconvergent trajectories
     if !(solution.retcode == :Success || solution.retcode == :Terminated || (params[10] >= maxPSPoints && relativeFluctuationThreshold >= 0))
         if !isnothing(savePath)
-            open(savePath * "_nonconvergent_trajectories.txt", "a") do io
-                println(io, "$(solution.retcode)\t$initialCondition")
+            open(savePath * "Nonconvergent_Trajectories.txt", "a") do io
+                println(io, "$(solution.retcode)\t$parameters\t$initialCondition")
             end
         end
 
