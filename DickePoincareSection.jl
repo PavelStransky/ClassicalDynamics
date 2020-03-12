@@ -1,7 +1,7 @@
 using Plots
 
-include("models\\Dicke.jl")
-include("modules\\ClassicalDynamics.jl")
+include("models/Dicke.jl")
+include("modules/ClassicalDynamics.jl")
 
 dickeParameters = [2,0.5,1,1]
 energy = 50

@@ -7,8 +7,8 @@ if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
 end
 
-@everywhere include("models\\Dicke.jl")
-@everywhere include("modules\\ClassicalDynamics.jl")
+@everywhere include("models/Dicke.jl")
+@everywhere include("modules/ClassicalDynamics.jl")
 
 """ Calculates Poincaré sections  with Lyapunov exponents for various energies
     Parallel calculation, takes usually days to finish

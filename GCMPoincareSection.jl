@@ -1,7 +1,7 @@
 using Plots
 
-include("models\\GCM.jl")
-include("modules\\ClassicalDynamics.jl")
+include("models/GCM.jl")
+include("modules/ClassicalDynamics.jl")
 
 GCMParameters = [-1,0.6,1,1]
 energy = 10
