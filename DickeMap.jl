@@ -22,7 +22,7 @@ end
         end
     end
 
-    time = @elapsed sectionLyapunov, trajectories = SolveEnergy(energy, parameters, dimension, savePath=path, verbose=true)
+    time = @elapsed sectionLyapunov, trajectories = SolveEnergy(energy, parameters, dimension, savePath=path)
 
     chaos = 0
     total = 0
