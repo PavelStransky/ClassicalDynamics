@@ -10,15 +10,19 @@ end
 @everywhere include("models\\Dicke.jl")
 @everywhere include("modules\\ClassicalDynamics.jl")
 
-""" Calculates PoincarDicke é sections  with Lyapunov exponents for various energies
+""" Calculates Poincaré sections with Lyapunov exponents for various energies
     Parallel calculation, takes usually days to finish
 """
 
-@everywhere function SolveItem(energy, λ)    
-    parameters = [λ, 1.0, 1.0, 1.0]
-    dimension = 101
+@everywhere function SolveItem(energy, parameters, dimension; file="Dicke.txt", path="", alreadySolved=[])    
+    for (E, λ) in alreadySolved
+        if isapprox(E, energy) && isapprox(parameters[1], λ)
+            println("Skipped $parameters, E=$energy, dim=$dimension (already calculated)")
+            return
+        end
+    end
 
-    time = @elapsed sectionLyapunov, trajectories = SolveEnergy(energy, parameters, dimension)
+    time = @elapsed sectionLyapunov, trajectories = SolveEnergy(energy, parameters, dimension, savePath=path, verbose=true)
 
     chaos = 0
     total = 0
@@ -42,23 +46,40 @@ end
         maxLyapunov = max(maxLyapunov, x)
     end
 
-    result = [energy, λ, total, chaos, error, total > 0 ? meanLyapunov / total : 0, chaos > 0 ? meanLyapunovChaos / chaos : 0, maxLyapunov, myid(), time, trajectories]
+    result = [energy, parameters[1], total, chaos, error, total > 0 ? meanLyapunov / total : 0, chaos > 0 ? meanLyapunovChaos / chaos : 0, maxLyapunov, myid(), time, trajectories]
 
-    open("d:\\results\\Dicke_Map_$dimension.txt", "a") do io
+    open(path * file, "a") do io
         println(io, result)
-    end    
-
-    return result
-end
-
-function RunMap()
-    input = [(energy, λ) for energy in 3:-0.1:-3, λ in 3:-0.1:0]
-    result = pmap((args)->SolveItem(args...), input)
-    println(result)
-end
-
-function ReadMap()
-    open("d:\\results\\Dicke_tmp.txt", "r") do io
-        println(read(io))
     end
+
+    return
+end
+
+function RunMap(; δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, step=0.1)
+    path *= "Dicke_"
+
+    file = "Map_dim=$(dimension)_$([δ, ω, ω₀]).txt"
+    alreadySolved = ReadMap(path * file)
+
+    println("Already calculated $(length(alreadySolved)) points.")
+
+    input = [(energy, [λ, δ, ω, ω₀], dimension) for energy in 3:-step:-3, λ in 3:-step:0]
+    pmap((args)->SolveItem(args...; file=file, path=path, alreadySolved=alreadySolved), input)    
+
+    return
+end
+
+function ReadMap(file="")
+    Eλ = []
+
+    for line in eachline(file)     
+        line = replace(line, "[" => "")   
+        line = replace(line, "]" => "")
+        line = replace(line, "," => "")
+        elements = split(line)
+
+        append!(Eλ, [(parse(Float64, elements[1]), parse(Float64, elements[2]))])
+    end
+
+    return Eλ
 end
