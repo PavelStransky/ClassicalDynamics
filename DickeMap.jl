@@ -22,16 +22,15 @@ end
         end
     end
 
-    time = @elapsed sectionLyapunov, trajectories = SolveEnergy(energy, parameters, dimension, savePath=path)
+    time = @elapsed averageLyapunov, maximumLyapunov, freg, trajectories = SolveEnergy(energy, parameters, dimension, savePath=path)
 
     chaos = 0
     total = 0
     error = 0
     meanLyapunov = 0
     meanLyapunovChaos = 0
-    maxLyapunov = 0
 
-    for x in sectionLyapunov
+    for x in averageLyapunov
         if x > 0.0
             total += 1
             meanLyapunov += x
@@ -43,10 +42,9 @@ end
             chaos += 1
             meanLyapunovChaos += x
         end        
-        maxLyapunov = max(maxLyapunov, x)
     end
 
-    result = [energy, parameters[1], total, chaos, error, total > 0 ? meanLyapunov / total : 0, chaos > 0 ? meanLyapunovChaos / chaos : 0, maxLyapunov, myid(), time, trajectories]
+    result = [energy, parameters[1], total, chaos, error, freg, total > 0 ? meanLyapunov / total : 0, chaos > 0 ? meanLyapunovChaos / chaos : 0, maximumLyapunov, myid(), time, trajectories]
 
     open(path * file, "a") do io
         println(io, result)
@@ -72,13 +70,16 @@ end
 function ReadMap(file="")
     Eλ = []
 
-    for line in eachline(file)     
-        line = replace(line, "[" => "")   
-        line = replace(line, "]" => "")
-        line = replace(line, "," => "")
-        elements = split(line)
+    try
+        for line in eachline(file)     
+            line = replace(line, "[" => "")   
+            line = replace(line, "]" => "")
+            line = replace(line, "," => "")
+            elements = split(line)
 
-        append!(Eλ, [(parse(Float64, elements[1]), parse(Float64, elements[2]))])
+            append!(Eλ, [(parse(Float64, elements[1]), parse(Float64, elements[2]))])
+        end
+    catch x
     end
 
     return Eλ
