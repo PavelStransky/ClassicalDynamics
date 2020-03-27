@@ -151,7 +151,7 @@ function SolveEnergy(energy, parameters, dimension;
 
     # Auxiliary variables just for info about the progress
     trajectories = 0
-    infoStep = convert(Int32, round(dimension / 10))
+    infoInterval = 120E9
     startTime = time_ns()
     lastTime = time_ns()
 
@@ -159,8 +159,9 @@ function SolveEnergy(energy, parameters, dimension;
 
     println("Starting SolveEnergy: $parameters, E = $energy, dim = $dimension:")
     for ip = 1:dimension, iq = 1:dimension
+        time = time_ns()
 
-        if ip % infoStep == 0 && iq == dimension
+        if time - lastTime > infoInterval
             numNonzero = 0
             for i in averageLyapunov
                 if i != 0
@@ -168,7 +169,7 @@ function SolveEnergy(energy, parameters, dimension;
                 end
             end
 
-            @printf("%.0f%% (%.0fs, %.0fs) trajectories = %d (%.0f%% of the section covered)\n", 100 * ip / dimension, (time_ns() - startTime) / 1E9, (time_ns() - lastTime) / 1E9,trajectories, 100 * numNonzero / (dimension * dimension))
+            @printf("%.0f%% (%.0fs, %.0fs) %d trajectories (%.0f%% of the section covered)\n", 100 * (ip + iq / dimension) / dimension, (time - startTime) / 1E9, (time - lastTime) / 1E9, trajectories, 100 * numNonzero / (dimension * dimension))
 
             lastTime = time_ns()
         end
@@ -252,7 +253,7 @@ function SolveEnergy(energy, parameters, dimension;
         display(contourf(averageLyapunov, title="E = $energy, trajectories = $trajectories"))
     end    
     
-    @printf("Finished λ = %.3f, E = %.3f, trajectories = %d, crossings = %d, Λ = %.3f, freg = %.3f (%.0fs)", parameters[1], energy, trajectories, crossings, maximumLyapunov, freg, (time_ns() - startTime) / 1E9)
+    @printf("%.0fs: Finished [λ, E] = [%.2f, %.2f], Λ = %.2f, freg = %.2f, %d trajectories, %d crossings\n", (time_ns() - startTime) / 1E9, parameters[1], energy, maximumLyapunov, freg, trajectories, crossings)
 
     return averageLyapunov, maximumLyapunov, freg, trajectories
 end
