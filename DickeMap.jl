@@ -70,7 +70,7 @@ function RunMap(; δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, step=0.1)
 end
 
 """ Calculates freg for one given lambda """
-function Runlambda(; λ=2.0, δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, step=0.1)
+function RunLambda(; λ=2.0, δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, step=0.1)
     path *= "Dicke_"
 
     file = "Energy_dim=$(dimension)_$([λ, δ, ω, ω₀]).txt"
