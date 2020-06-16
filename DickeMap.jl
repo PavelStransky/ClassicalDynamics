@@ -85,6 +85,9 @@ function Runlambda(; λ=2.0, δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, 
 
     pmap((args)->SolveItem(args...; file=file, path=path, alreadySolved=alreadySolved), input)    
 
+    return
+end
+
 function ReadMap(file="")
     Eλ = []
 
