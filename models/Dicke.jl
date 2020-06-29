@@ -80,8 +80,6 @@ function InitialCondition!(x0, e, parameters)
             append!(ics, x0[3])
         end
 
-        println(ics)
-
         if length(ics) == 0
             x0[3] = missing
             return false
