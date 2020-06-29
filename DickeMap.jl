@@ -71,7 +71,7 @@ function RunMap(; δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, step=0.1, s
 end
 
 """ Calculates freg for one given lambda """
-function RunLambda(; λ=2.0, δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, step=0.1)
+function RunLambda(; λ=2.0, δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, step=0.1, sectionPlane=2)
     path *= "Dicke_"
 
     file = "Energy_dim=$(dimension)_$([λ, δ, ω, ω₀]).txt"
@@ -84,7 +84,7 @@ function RunLambda(; λ=2.0, δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, 
 
     input = [(energy, [λ * λᵪ, δ, ω, ω₀], dimension) for energy in -4:step:30]
 
-    pmap((args)->SolveItem(args...; file=file, path=path, alreadySolved=alreadySolved), input)    
+    pmap((args)->SolveItem(args...; file=file, path=path, alreadySolved=alreadySolved, sectionPlane=sectionPlane), input)    
 
     return
 end
