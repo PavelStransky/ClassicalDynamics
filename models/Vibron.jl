@@ -64,7 +64,7 @@ function EquationOfMotion!(dx, x, parameters, t)
     s2 = 2.0 - (p*p + P*P + q*q + Q*Q)
     if s2 < 0                       
         s2 = 0                      # With isoutofdomain=CheckDomain the calculation shouldn't enter here, but in enters anyway
-        @error("s negative!") 
+        print("s negative!") 
     end
     
     Φ = reshape(x[5:end], 4, 4)     # Tangent dynamics
