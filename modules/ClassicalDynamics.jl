@@ -185,8 +185,8 @@ function SolveEnergy(energy, parameters, dimension;
         end
         
         # Randomize - IC selected randomly from a calculated cell, otherwise it is always taken from the cell centre
-        P = (max - min) * (ip - (randomize ? (1.5 + rand()) : 1.0)) / (dimension - 1.0) + min
-        Q = (max - min) * (iq - (randomize ? (1.5 + rand()) : 1.0)) / (dimension - 1.0) + min
+        P = (max - min) * (ip - (randomize ? rand() : 0.5)) / dimension  + min
+        Q = (max - min) * (iq - (randomize ? rand() : 0.5)) / dimension  + min
     
         x = sectionPlane == 1 ? [0.0, P, missing, Q] : [P, 0.0, Q, missing]
         if InitialCondition!(x, energy, parameters)

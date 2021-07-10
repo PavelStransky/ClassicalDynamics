@@ -18,11 +18,11 @@ end
     for (E, λ) in alreadySolved
         if isapprox(E, energy) && isapprox(parameters[1], λ)
             println("Skipped $parameters, E=$energy, dim=$dimension (already calculated)")
-            return
+            return false
         end
     end
 
-    time = @elapsed averageLyapunov, maximumLyapunov, freg, trajectories = SolveEnergy(energy, parameters, dimension, savePath=path, sectionPlane=sectionPlane, min=-sqrt(2.0), max=sqrt(2.0), timeout=7200)
+    time = @elapsed averageLyapunov, maximumLyapunov, freg, trajectories = SolveEnergy(energy, parameters, dimension, savePath=path, sectionPlane=sectionPlane, min=-sqrt(2.0), max=sqrt(2.0), timeout=7200, randomize=true)
 
     chaos = 0
     total = 0
@@ -50,7 +50,7 @@ end
         println(io, result)
     end
 
-    return
+    return true
 end
 
 function RunMapC(; C=0.2, path="", dimension=101, step=0.1, sectionPlane=1)
@@ -59,9 +59,11 @@ function RunMapC(; C=0.2, path="", dimension=101, step=0.1, sectionPlane=1)
     file = "Map_dim=$(dimension)_$C.txt"
     alreadySolved = ReadMap(path * file)
 
+    input = shuffle([(energy, [A, A-1, C], dimension) for energy in -1.2:step:1, A in 0:step:1])
+
+    println("To be calculated $(length(input)).")
     println("Already calculated $(length(alreadySolved)) points.")
 
-    input = shuffle([(energy, [A, A-1, C], dimension) for energy in -1.2:step:1, A in 0:step:1])
     pmap((args)->SolveItem(args...; file=file, path=path, alreadySolved=alreadySolved, sectionPlane=sectionPlane), input)
 
     return

@@ -8,6 +8,11 @@ function Energy(x, parameters)
     Σ2 = p*p + P*P + q*q + Q*Q
     s2 = 2.0 - Σ2
 
+    if s2 < 0.0
+        print("s negative!")
+        s2 = 0.0
+    end
+
     return A * Σ2 + B * ((P*P + p*p) * s2 + (P*q - p*Q) ^ 2) + C * P * sqrt(s2)
 end
 
@@ -34,11 +39,11 @@ function InitialCondition!(x0, e, parameters)
 
         discriminant = (e - (A * (p*p + q*q) + B * p*p * s2)) / A
 
-        if discriminant < 0
+        if discriminant < 0.0
             return false
         end
 
-        if s2 - discriminant < 0
+        if s2 - discriminant < 0.0
             return false
         end
 
@@ -63,7 +68,7 @@ function EquationOfMotion!(dx, x, parameters, t)
 
     s2 = 2.0 - (p*p + P*P + q*q + Q*Q)
     if s2 < 0                       
-        s2 = 0                      # With isoutofdomain=CheckDomain the calculation shouldn't enter here, but in enters anyway
+        s2 = 0.0                    # With isoutofdomain=CheckDomain the calculation shouldn't enter here, but in enters anyway
         print("s negative!") 
     end
     
