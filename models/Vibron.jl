@@ -33,6 +33,7 @@ function InitialCondition!(x0, e, parameters)
         end
 
         discriminant = (e - (A * (p*p + q*q) + B * p*p * s2)) / A
+
         if discriminant < 0
             return false
         end
