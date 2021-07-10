@@ -123,7 +123,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
     result = sectionPlane == 1 ? zip(solution[2,:], solution[4,:]) : zip(solution[1,:], solution[3,:])
 
     if showFigures
-        pannel1 = scatter(result, title="P = $(x0[1]), Q = $(x0[3]) [$(length(solution))]")
+        pannel1 = scatter(collect(result), title="P = $(x0[1]), Q = $(x0[3]) [$(length(solution))]")
         pannel2 = plot(lyapunovs.t, lyapunovs.saveval, lw=2, title="Lyapunov = $lyapunov ± $lv")
         display(plot(pannel1, pannel2, layout=2))
     end
@@ -140,6 +140,7 @@ function SolveEnergy(energy, parameters, dimension;
         showFigures=false, 
         verbose=false, 
         randomize=false, 
+        timeout=0,
         kwargs...
     )
 
@@ -160,6 +161,11 @@ function SolveEnergy(energy, parameters, dimension;
     println("Starting SolveEnergy: $parameters, E = $energy, dim = $dimension:")
     for ip = 1:dimension, iq = 1:dimension
         time = time_ns()
+
+        if timeout > 0 && time - startTime > 1E9 * timeout
+            print("TIMEOUT: ")
+            break
+        end
 
         if time - lastTime > infoInterval
             numNonzero = 0
