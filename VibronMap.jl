@@ -56,15 +56,32 @@ end
 function RunMapC(; C=0.2, path="", dimension=101, step=0.1, sectionPlane=1)
     path *= "Vibron_"
 
-    file = "Map_dim=$(dimension)_$C.txt"
+    file = "Map_dim=$(dimension)_C=$C.txt"
     alreadySolved = ReadMap(path * file)
 
-    input = shuffle([(energy, [A, A-1, C], dimension) for energy in -1.2:step:1, A in 0:step:1])
+    input = shuffle([(energy, [0.5 * (1 - A), -A, C], dimension) for energy in -1.2:step:1, A in 0:step:1])
 
     println("To be calculated $(length(input)).")
     println("Already calculated $(length(alreadySolved)) points.")
 
     pmap((args)->SolveItem(args...; file=file, path=path, alreadySolved=alreadySolved, sectionPlane=sectionPlane), input)
+
+    return
+end
+
+""" Calculates freg for one given A and C """
+function RunAC(; C=0.2, A=0.4, path="", dimension=101, step=0.01, sectionPlane=1)
+    path *= "Vibron_"
+
+    file = "Energy_dim=$(dimension)_$([A, C]).txt"
+    alreadySolved = ReadMap(path * file)
+
+    input = [(energy, [0.5 * (1 - A), -A, C], dimension) for energy in -1.2:step:1]
+
+    println("To be calculated $(length(input)).")
+    println("Already calculated $(length(alreadySolved)) points.")
+
+    pmap((args)->SolveItem(args...; file=file, path=path, alreadySolved=alreadySolved, sectionPlane=sectionPlane), input)    
 
     return
 end
