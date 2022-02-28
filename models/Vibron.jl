@@ -1,4 +1,11 @@
 using Random
+using Roots
+
+
+# px = p
+# py = P
+# x = q
+# y = Q
 
 """ Energy of the Dicke model """
 function Energy(x, parameters)
@@ -9,8 +16,9 @@ function Energy(x, parameters)
     s2 = 2.0 - Σ2
 
     if s2 < 0.0
-        print("s negative!")
-        s2 = 0.0
+        return NaN
+#        print("s negative!")
+#        s2 = 0.0
     end
 
     return A * Σ2 + B * ((P*P + p*p) * s2 + (P*q - p*Q) ^ 2) + C * P * sqrt(s2)
@@ -23,33 +31,49 @@ function InitialCondition!(x0, e, parameters)
     P, p, Q, q = x0
     A, B, C  = parameters
 
+    # Section P = py = 0
     if numMissingValues == 1 && ismissing(Q) && P == 0.0
         s2 = 2.0 - (p*p + q*q)
         if s2 < 0
             return false
         end
         
-        sign = rand() >= 0.5 ? 1.0 : -1.0
-
-        if A == 0.0
-            Q = sign * rand() * sqrt(s2)
-            x0[3] = Q
-            return true
-        end
-
-        discriminant = (e - (A * (p*p + q*q) + B * p*p * s2)) / A
-
-        if discriminant < 0.0
+        points = Nothing
+        try
+            points = find_zeros(x -> Energy((P, p, x, q), parameters) - e, -sqrt(2), sqrt(2))
+        catch e
             return false
         end
 
-        if s2 - discriminant < 0.0
+        if length(points) == 0
             return false
         end
 
-        Q = sign * sqrt(discriminant)
+        Q = rand(points)
         x0[3] = Q
+        return true
+    end
 
+    # Section q = x = 0
+    if numMissingValues == 1 && ismissing(p) && q == 0.0
+        s2 = 2.0 - (P*P + Q*Q)
+        if s2 < 0
+            return false
+        end
+
+        points = Nothing
+        try
+            points = find_zeros(x -> Energy((P, x, Q, q), parameters) - e, -sqrt(2), sqrt(2))
+        catch e
+            return false
+        end
+
+        if length(points) == 0
+            return false
+        end
+
+        p = rand(points)
+        x0[2] = p
         return true
     end
 

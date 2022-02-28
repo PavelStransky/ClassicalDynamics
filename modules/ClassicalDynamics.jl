@@ -5,58 +5,86 @@ using Statistics
 using Plots
 using Printf
 
+mutable struct IntegrationParameters
+    dimension
+    modelParameters
+    energy
+    relaxationTime
+    relativeFluctuationThreshold
+    regularThreshold
+    maxPSPoints
+    psPoints
+    lyapunovExponent
+    historyLyapunovExponent
+end    
+
 """ 
     Rescales the Φ matrix and saves the Lyapunov exponent
     Called periodically (every "saveStep" time units) - SavingCallback
 """
-function rescale!(u, t, integrator)
-    Φ = reshape(integrator.u[5:end], 4, 4)
-    maxEigenvalue = sqrt(maximum(eigvals(Φ * transpose(Φ))))
+function RescaleΦ!(u, t, integrator)
+    integrationParameters = integrator.p
+    dimension = integrationParameters.dimension
 
-    integrator.u[5:end] /= maxEigenvalue
+    Φ = reshape(integrator.u[(dimension + 1):end], dimension, dimension)
+    
+    maxEigenvalue = sqrt(maximum(eigvals(Φ * transpose(Φ))))
+    integrator.u[(dimension + 1):end] /= maxEigenvalue
 
     lyapunov = 0
 
-    relaxationTime = integrator.p[6]
+    relaxationTime = integrationParameters.relaxationTime
     if t > relaxationTime
-        integrator.p[11] += log(maxEigenvalue)
-        lyapunov = integrator.p[11] / (t - relaxationTime)
+        integrationParameters.lyapunovExponent += log(maxEigenvalue)
+        lyapunov = integrationParameters.lyapunovExponent / (t - relaxationTime)
 
-        lyapunovs = integrator.p[13:end]
+        lyapunovs = integrationParameters.historyLyapunovExponent[2:end]
         append!(lyapunovs, lyapunov)
-        integrator.p[12:end] = lyapunovs
+        integrationParameters.historyLyapunovExponent = lyapunovs
     end
 
     return lyapunov
 end
 
 """ Poincaré section conditions """
-sectionCondition1(u, t, integrator) = u[1]
-sectionCondition2(u, t, integrator) = u[2]
+function SectionCondition(sectionPlane) 
+    return (u, t, integrator) -> u[sectionPlane]
+end
+
+function SectionPlane(sectionPlane, P, Q) 
+    if sectionPlane == 1
+        return [0.0, P, missing, Q] 
+    elseif sectionPlane == 2
+        return [P, 0.0, Q, missing]
+    elseif sectionPlane == 3
+        return [missing, P, 0.0, Q] 
+    elseif sectionPlane == 4
+        return [P, missing, Q, 0.0] 
+    end
+end
 
 """ Hit Poincaré section - ContinuousCallback """
-function section!(integrator)
-    maxPSPoints = integrator.p[9]
+function Section!(integrator)
+    integrationParameters = integrator.p
+    maxPSPoints = integrationParameters.maxPSPoints
 
-    integrator.p[10] += 1
-    if integrator.p[10] >= maxPSPoints
+    integrationParameters.psPoints += 1
+    if integrationParameters.psPoints >= maxPSPoints
         return terminate!(integrator)
     end
 
-    lyapunovs = integrator.p[12:end]
+    lyapunovs = integrationParameters.historyLyapunovExponent
     lv = var(lyapunovs)
     lm = mean(lyapunovs)
 
-    relativeFluctuationThreshold = integrator.p[7]
-    regularThreshold = integrator.p[8]
-    if (lm > 0) && ((lv / lm < relativeFluctuationThreshold) || (lm < regularThreshold))
+    if (lm > 0) && ((lv / lm < integrationParameters.relativeFluctuationThreshold) || (lm < integrationParameters.regularThreshold))
         return terminate!(integrator)
     end
 end
 
 """ Energy conservation - ManifoldProjection """
-function energyConservation!(resid, u, params, t)
-    resid[1] = Energy(u, params) - params[5]
+function EnergyConservation!(resid, u, integrationParameters, t)
+    resid[1] = Energy(u, integrationParameters.modelParameters) - integrationParameters.energy
     resid[2:end] .= 0
 end
 
@@ -80,37 +108,34 @@ function TrajectoryLyapunov(initialCondition, parameters;
         timeInterval = (0, 1e5)
     )
 
-    x0 = zeros(20)
-    x0[1:4] = initialCondition
-    x0[5:end] = Matrix{Float64}(I, 4, 4)
+    phaseSpaceDimension = length(initialCondition)
+    x0 = zeros(phaseSpaceDimension * (phaseSpaceDimension + 1))
+    x0[1:phaseSpaceDimension] = initialCondition
+    x0[(phaseSpaceDimension + 1):end] = Matrix{Float64}(I, phaseSpaceDimension, phaseSpaceDimension)
 
     energy = Energy(x0, parameters)
 
-    resize!(parameters, 4)          # !!! Works for 4 parameters at most !!!
-    params = [parameters..., energy, relaxationTime, relativeFluctuationThreshold, regularThreshold, maxPSPoints, 0, 1]   
-                                                                                            # 1...4=parameters, 5=energy, 6=relaxationTime, 7=relativeFluctuationThreshold, 8=regularThreshold, 9=maximum number of points in Poincare section, 
-                                                                                            #                   10=num points in the Poincaré section, 11=current Lyapunov exponent 
-    append!(params, rand(lyapunovSeriesLength))                                             # Queue with latest Lyapunov exponents (initialized as a random series)    
+    integrationParameters = IntegrationParameters(phaseSpaceDimension, parameters, energy, relaxationTime, relativeFluctuationThreshold, regularThreshold, maxPSPoints, 0, 1, rand(lyapunovSeriesLength))
 
-    sectionCondition = sectionPlane == 1 ? sectionCondition1 : sectionCondition2
+    sectionCondition = SectionCondition(sectionPlane) 
     lyapunovs = SavedValues(Float64, Float64)                                              # For a graph with the time evolution of Lyapunov exponents
 
     # Main part - calling the ODE solver
     fnc = ODEFunction(EquationOfMotion!)
-    problem = ODEProblem(fnc, x0, timeInterval, params)
-    callback = CallbackSet(ManifoldProjection(energyConservation!, save=false), SavingCallback(rescale!, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, section!, nothing, save_positions=(false, true)))
+    problem = ODEProblem(fnc, x0, timeInterval, integrationParameters)
+    callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(RescaleΦ!, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, Section!, nothing, save_positions=(false, true)))
     time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=maxIterations, isoutofdomain=CheckDomain, verbose=verbose)
 
     # Print results
-    lyapunov = mean(params[12:end])
-    lv = var(params[12:end])
+    lyapunov = mean(integrationParameters.historyLyapunovExponent)
+    lv = var(integrationParameters.historyLyapunovExponent)
 
     if verbose && length(solution) > 0
-        println("Calculation time = $time, Trajectory time = $(solution.t[end]), Final energy = $(Energy(solution[end], parameters)), PS points = $(params[10]) Λ = $lyapunov ± $lv")
+        println("Calculation time = $time, Trajectory time = $(solution.t[end]), Final energy = $(Energy(solution[end], parameters)), PS points = $(integrationParameters.psPoints) Λ = $lyapunov ± $lv")
     end
 
     # Save all unstable or nonconvergent trajectories (for debug reasons)
-    if !(solution.retcode == :Success || solution.retcode == :Terminated || (params[10] >= maxPSPoints && relativeFluctuationThreshold >= 0))
+    if !(solution.retcode == :Success || solution.retcode == :Terminated || (integrationParameters.psPoints >= maxPSPoints && relativeFluctuationThreshold >= 0))
         if !isnothing(savePath)
             open(savePath * "Nonconvergent_Trajectories.txt", "a") do io
                 println(io, "$parameters\t$energy\t$initialCondition\t$(solution.retcode)")
@@ -120,10 +145,21 @@ function TrajectoryLyapunov(initialCondition, parameters;
         return [], 0                # Unstable trajectories can be distinguished later because their LE is exactly 0
     end
 
-    result = sectionPlane == 1 ? zip(solution[2,:], solution[4,:]) : zip(solution[1,:], solution[3,:])
+    result = collect(sectionPlane == 1 || sectionPlane == 3 ? zip(solution[2,:], solution[4,:]) : zip(solution[1,:], solution[3,:]))
+
+    if sectionPlane == 4
+        result = Array{Float64}(undef, 0)
+        for s in solution.u
+            if s[2] > 0
+                append!(result, (s[1], s[3]))
+            end
+        end
+        result = reshape(result, 2, :)
+        result = collect(zip(result[1,:], result[2,:]))
+    end
 
     if showFigures
-        pannel1 = scatter(collect(result), title="P = $(x0[1]), Q = $(x0[3]) [$(length(solution))]")
+        pannel1 = scatter(result, title="P = $(x0[1]), Q = $(x0[3]) [$(length(solution))]")
         pannel2 = plot(lyapunovs.t, lyapunovs.saveval, lw=2, title="Lyapunov = $lyapunov ± $lv")
         display(plot(pannel1, pannel2, layout=2))
     end
@@ -131,6 +167,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
     return result, lyapunov, zip(lyapunovs.t, lyapunovs.saveval)
 end
 
+#=
 """ Solve all trajectories for a given energy at a lattice P,Q = (1...dimension, 1...dimension) """
 function SolveEnergy(energy, parameters, dimension; 
         min=-2.0, 
@@ -188,7 +225,7 @@ function SolveEnergy(energy, parameters, dimension;
         P = (max - min) * (ip - (randomize ? rand() : 0.5)) / dimension  + min
         Q = (max - min) * (iq - (randomize ? rand() : 0.5)) / dimension  + min
     
-        x = sectionPlane == 1 ? [0.0, P, missing, Q] : [P, 0.0, Q, missing]
+        x = getSectionPlane(sectionPlane, P, Q)
         if InitialCondition!(x, energy, parameters)
             x = collect(skipmissing(x))
             ps, lyapunov = TrajectoryLyapunov(x, parameters; showFigures=showFigures, verbose=verbose, sectionPlane=sectionPlane, kwargs...)
@@ -283,7 +320,8 @@ function PoincareSection(energy, parameters, numTrajectories;
 
         maxICNumber -= 1
 
-        x = sectionPlane == 1 ? [0.0, P, missing, Q] : [P, 0.0, Q, missing]
+        x = getSectionPlane(sectionPlane, P, Q)
+        
         if !InitialCondition!(x, energy, parameters)
             continue                    # Failure of generating an initial condition
         end
@@ -299,7 +337,9 @@ function PoincareSection(energy, parameters, numTrajectories;
 
         trajectory += 1
 
-        figure = scatter!(collect(ps), label="Λ=$(round(lyapunov, digits=3))", markersize=3, markeralpha=0.8, markerstrokewidth=0)
+        print(ps)
+
+        figure = scatter!(ps, label="Λ=$(round(lyapunov, digits=3))", markersize=3, markeralpha=0.8, markerstrokewidth=0)
 
         if showFigures
             display(figure)
@@ -308,6 +348,7 @@ function PoincareSection(energy, parameters, numTrajectories;
 
     return figure
 end
+=#
 
 """ Calculates Lyapunov exponents for a given energy and number of trajectories """
 function LyapunovExponents(energy, parameters, numTrajectories; 
@@ -326,7 +367,7 @@ function LyapunovExponents(energy, parameters, numTrajectories;
         P = (max - min) * rand() + min
         Q = (max - min) * rand() + min
 
-        x = sectionPlane == 1 ? [0.0, P, missing, Q] : [P, 0.0, Q, missing]
+        x = SectionPlane(sectionPlane, P, Q)
         if !InitialCondition!(x, energy, parameters)
             continue
         end
@@ -341,7 +382,7 @@ function LyapunovExponents(energy, parameters, numTrajectories;
 
         trajectory += 1
 
-        pannel1 = scatter!(pannel1, collect(ps), label="Λ=$(round(lyapunov, digits=2))", markersize=3, markeralpha=0.8, markerstrokewidth=0)
+        pannel1 = scatter!(pannel1, ps, label="Λ=$(round(lyapunov, digits=2))", markersize=3, markeralpha=0.8, markerstrokewidth=0)
         pannel2 = plot!(pannel2, collect(lyapunovs), lw=2, title="Lyapunov = $lyapunov")
         figure = plot(pannel1, pannel2, layout=2)
 
@@ -353,6 +394,7 @@ function LyapunovExponents(energy, parameters, numTrajectories;
     return figure
 end
 
+#=
 """ Calculates an individual trajectory with given initial conditions"""
 function Trajectory(initialCondition, parameters; 
         solver=TsitPap8(), 
@@ -427,3 +469,4 @@ function TestTrajectory(x, parameters)
         #savefig(p, "d:\\results\\rosenbrockW.png")
     end
 end
+=#

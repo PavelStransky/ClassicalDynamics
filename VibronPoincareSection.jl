@@ -11,7 +11,7 @@ PSPoints = 1000
 savePath = "d:\\results\\Vibron"
 
 pyplot(size = (1200,1000))
-fig = PoincareSection(energy, vibronParameters, numTrajectories; maxPSPoints=PSPoints, verbose=true, sectionPlane=1, min=-sqrt(2.0), max=sqrt(2.0), tolerance=1e-8)
+fig = PoincareSection(energy, vibronParameters, numTrajectories; maxPSPoints=PSPoints, verbose=true, sectionPlane=4, min=-sqrt(2.0), max=sqrt(2.0), tolerance=1e-8)
 #savefig(fig, savePath * "_PS_E=$(energy)_$vibronParameters.png")
 
 

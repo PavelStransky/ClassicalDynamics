@@ -109,7 +109,7 @@ function EquationOfMotion!(dx, x, parameters, t)
     end
     
     Φ = reshape(x[5:end], 4, 4)     # Tangent dynamics
-    λ, δ, ω, ω₀ = parameters
+    λ, δ, ω, ω₀ = parameters.modelParameters
 
     s = sqrt(s2)
     b = (1.0 + δ) * P * q - (1.0 - δ) * p * Q
