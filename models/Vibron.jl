@@ -25,59 +25,32 @@ function Energy(x, parameters)
 end
 
 """ Filling initial conditions (at a given energy calculates randomly all missing points) """
-function InitialCondition!(x0, e, parameters)
-    numMissingValues = length(x0) - length(collect(skipmissing(x0)))
+function InitialConditions(x0, e, parameters, coordinate)
+    x = deepcopy(x0)
+    x[coordinate] = 0
 
-    P, p, Q, q = x0
+    P, p, Q, q = x
     A, B, C  = parameters
 
-    # Section P = py = 0
-    if numMissingValues == 1 && ismissing(Q) && P == 0.0
-        s2 = 2.0 - (p*p + q*q)
-        if s2 < 0
-            return false
-        end
-        
-        points = Nothing
+    result = []
+    
+    s2 = 2.0 - (P*P + p*p + Q*Q + q*q)
+    if s2 >= 0
         try
-            points = find_zeros(x -> Energy((P, p, x, q), parameters) - e, -sqrt(2), sqrt(2))
+            if coordinate == 1
+                result = find_zeros(x -> Energy((x, p, Q, q), parameters) - e, -sqrt(2), sqrt(2))
+            elseif coordinate == 2
+                result = find_zeros(x -> Energy((P, x, Q, q), parameters) - e, -sqrt(2), sqrt(2))
+            elseif coordinate == 3
+                result = find_zeros(x -> Energy((P, p, x, q), parameters) - e, -sqrt(2), sqrt(2))
+            elseif coordinate == 4
+                result = find_zeros(x -> Energy((P, p, Q, x), parameters) - e, -sqrt(2), sqrt(2))
+            end
         catch e
-            return false
         end
-
-        if length(points) == 0
-            return false
-        end
-
-        Q = rand(points)
-        x0[3] = Q
-        return true
     end
 
-    # Section q = x = 0
-    if numMissingValues == 1 && ismissing(p) && q == 0.0
-        s2 = 2.0 - (P*P + Q*Q)
-        if s2 < 0
-            return false
-        end
-
-        points = Nothing
-        try
-            points = find_zeros(x -> Energy((P, x, Q, q), parameters) - e, -sqrt(2), sqrt(2))
-        catch e
-            return false
-        end
-
-        if length(points) == 0
-            return false
-        end
-
-        p = rand(points)
-        x0[2] = p
-        return true
-    end
-
-    return false
+    return sort(result, rev=true)
 end
 
 """ True if given trajectory is within the kinematically accessible domain """
@@ -97,7 +70,7 @@ function EquationOfMotion!(dx, x, parameters, t)
     end
     
     Φ = reshape(x[5:end], 4, 4)     # Tangent dynamics
-    A, B, C = parameters
+    A, B, C = parameters.modelParameters
 
     s = sqrt(s2)
     a = p*p + P*P
