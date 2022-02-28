@@ -146,7 +146,7 @@ function PoincareSection(energy, parameters, numTrajectories;
 
             if length(initialConditions) == 0
                 initialConditionIndex[i] = 1
-                @info "No initial condition found for point $(solution.u[i][1:4]) with E = $(Energy(solution.u[i][1:4], parameters))"
+                #@info "No initial condition found for point $(solution.u[i][1:4]) with E = $(Energy(solution.u[i][1:4], parameters))"
                 continue
             end
 

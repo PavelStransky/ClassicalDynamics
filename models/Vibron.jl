@@ -1,6 +1,5 @@
 using Random
-using Roots
-
+using IntervalRootFinding
 
 # px = p
 # py = P
@@ -38,19 +37,24 @@ function InitialConditions(x0, e, parameters, coordinate)
     if s2 >= 0
         try
             if coordinate == 1
-                result = find_zeros(x -> Energy((x, p, Q, q), parameters) - e, -sqrt(2), sqrt(2))
+                result = roots(x -> Energy((x, p, Q, q), parameters) - e, -sqrt(2)..sqrt(2))
             elseif coordinate == 2
-                result = find_zeros(x -> Energy((P, x, Q, q), parameters) - e, -sqrt(2), sqrt(2))
+                result = roots(x -> Energy((P, x, Q, q), parameters) - e, -sqrt(2)..sqrt(2))
             elseif coordinate == 3
-                result = find_zeros(x -> Energy((P, p, x, q), parameters) - e, -sqrt(2), sqrt(2))
+                result = roots(x -> Energy((P, p, x, q), parameters) - e, -sqrt(2)..sqrt(2))
             elseif coordinate == 4
-                result = find_zeros(x -> Energy((P, p, Q, x), parameters) - e, -sqrt(2), sqrt(2))
+                result = roots(x -> Energy((P, p, Q, x), parameters) - e, -sqrt(2)..sqrt(2))
             end
         catch e
         end
     end
 
-    return sort(result, rev=true)
+    r = zeros(Float64, length(result))
+    for i = 1:length(result)
+        r[i] = mid(result[i].interval)
+    end
+
+    return sort(r, rev=true)
 end
 
 """ True if given trajectory is within the kinematically accessible domain """
