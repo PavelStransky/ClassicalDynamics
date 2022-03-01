@@ -6,7 +6,6 @@ using Plots
 using Printf
 using Logging
 
-LogLevel(Logging.Debug)
 pyplot(size = (1200,1000))
 
 mutable struct IntegrationParameters
@@ -17,11 +16,15 @@ mutable struct IntegrationParameters
     relativeFluctuationThreshold
     regularThreshold
     maximumSectionPoints
-    psPoints
+    sectionPoints
+    startTime
+    timeout
+    result
     lyapunovExponent
     historyLyapunovExponent
 end    
 
+# disable_logging(Logging.Info)
 
 """ 
     Rescales the Φ matrix and saves the Lyapunov exponent
@@ -48,6 +51,11 @@ function RescaleΦ!(u, t, integrator)
         integrationParameters.historyLyapunovExponent = lyapunovs
     end
 
+    if(integrationParameters.timeout > 0 && time_ns() - integrationParameters.startTime > integrationParameters.timeout)
+        integrationParameters.result = :Timeout
+        terminate!(integrator)
+    end
+
     return lyapunov
 end
 
@@ -63,8 +71,9 @@ function Section!(integrator)
     integrationParameters = integrator.p
     maximumSectionPoints = integrationParameters.maximumSectionPoints
 
-    integrationParameters.psPoints += 1
-    if integrationParameters.psPoints >= maximumSectionPoints
+    integrationParameters.sectionPoints += 1
+    if integrationParameters.sectionPoints >= maximumSectionPoints
+        integrationParameters.result = :MaximumSectionPoints
         return terminate!(integrator)
     end
 
@@ -73,6 +82,12 @@ function Section!(integrator)
     lm = mean(lyapunovs)
 
     if (lm > 0) && ((lv / lm < integrationParameters.relativeFluctuationThreshold) || (lm < integrationParameters.regularThreshold))
+        integrationParameters.result = :Converged
+        return terminate!(integrator)
+    end
+
+    if(integrationParameters.timeout > 0 && time_ns() - integrationParameters.startTime > integrationParameters.timeout)
+        integrationParameters.result = :Timeout
         return terminate!(integrator)
     end
 end
@@ -106,6 +121,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
         sectionPlane=3, 
         savePath=nothing, 
         showFigures=false, 
+        timeout=0,
         maximumIterations=2E6, 
         relaxationTime=100, 
         regularThreshold=1e-3, 
@@ -126,7 +142,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
 
     energy = Energy(x0, parameters)
 
-    integrationParameters = IntegrationParameters(phaseSpaceDimension, parameters, energy, relaxationTime, relativeFluctuationThreshold, regularThreshold, maximumSectionPoints, 0, 1, rand(lyapunovSeriesLength))
+    integrationParameters = IntegrationParameters(phaseSpaceDimension, parameters, energy, relaxationTime, relativeFluctuationThreshold, regularThreshold, maximumSectionPoints, 0, time_ns(), 1E9 * timeout, :Start, 1, rand(lyapunovSeriesLength))
 
     sectionCondition = SectionCondition(sectionPlane) 
     lyapunovs = SavedValues(Float64, Float64)                                              # For a graph with the time evolution of Lyapunov exponents
@@ -142,11 +158,13 @@ function TrajectoryLyapunov(initialCondition, parameters;
     lv = var(integrationParameters.historyLyapunovExponent)
 
     if length(solution) > 0
-        @info "Calculation time = $time, Trajectory time = $(solution.t[end]), Final energy = $(Energy(solution[end], parameters)), PS points = $(integrationParameters.psPoints) Λ = $lyapunov ± $lv"
+        @info "Calculation time = $time, Trajectory time = $(solution.t[end]), Final energy = $(Energy(solution[end], parameters)), PS points = $(integrationParameters.sectionPoints) Λ = $lyapunov ± $lv"
     end
 
+    @debug "retcode = $(solution.retcode), result = $(integrationParameters.result)"
+
     # Save all unstable or nonconvergent trajectories (for debug reasons)
-    if !(solution.retcode == :Success || solution.retcode == :Terminated || (integrationParameters.psPoints >= maximumSectionPoints && relativeFluctuationThreshold >= 0))
+    if !(solution.retcode == :Success || (solution.retcode == :Terminated && integrationParameters.result != :Timeout))
         if !isnothing(savePath)
             open(savePath * "Nonconvergent_Trajectories.txt", "a") do io
                 println(io, "$parameters\t$energy\t$initialCondition\t$(solution.retcode)")
@@ -154,7 +172,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
         end
 
         @info "Nonconvergent trajectory with initialCondition = $initialCondition"
-        return [], 0                # Unstable trajectories can be distinguished later because their LE is exactly 0
+        return [], 0, []    # Unstable trajectories can be distinguished later because their LE is exactly 0
     end
 
     if showFigures
@@ -230,8 +248,9 @@ function SolveEnergy(energy, parameters, dimension;
         sectionCoordinateX=2,
         sectionCoordinateY=4,
         sectionPlane=3,
-        regularThreshold=0.004, 
-        showFigures=true, 
+        regularThreshold=0.005, 
+        showFigures=true,
+        savePath=nothing,
         randomize=false, 
         timeout=0,
         kwargs...
@@ -241,10 +260,11 @@ function SolveEnergy(energy, parameters, dimension;
 
     averageLyapunov = zeros(Float64, dimension, dimension)
     countLyapunov = zeros(Int32, dimension, dimension)
-    fregSection = zeros(Float64, dimension, dimension)
+    fregSection = fill(-1.0, (dimension, dimension))
 
     # All calculated Lyapunov exponents
     lyapunovs = zeros(Float64, 0)
+    calculationTimes = zeros(Float64, 0)
 
     # Auxiliary variables just for info about the progress
     trajectories = 0
@@ -289,13 +309,23 @@ function SolveEnergy(energy, parameters, dimension;
         ic[sectionCoordinateY] = y
 
         m = InitialConditions(ic, energy, parameters, missingCoordinate)
+
         if length(m) > 0
             ic[missingCoordinate] = rand(m)
-            @info "Initial conditions = $ic:"
-            result, lyapunov = TrajectoryLyapunov(ic, parameters; showFigures=false, sectionPlane=sectionPlane, regularThreshold=regularThreshold, kwargs...)
+
+            calculationTimeout = 0
+            if length(calculationTimes) > 0
+                calculationTimeout = 5 * mean(calculationTimes)
+            end
+
+            @info "Initial conditions = $ic, timeout = $calculationTimeout"
+
+            calculationTime = @elapsed result, lyapunov = TrajectoryLyapunov(ic, parameters; timeout=calculationTimeout, savePath=savePath, showFigures=false, sectionPlane=sectionPlane, regularThreshold=0.9 * regularThreshold, kwargs...)
+
+            append!(calculationTimes, calculationTime)
         else
             result = []
-            lyapunov = -0.01                        # Unable to find initial condition - return small negative lyapunov exponent (in order to distinguish later kinematically inaccessible area)
+            lyapunov = -0.01                        # Unable to find initial condition - return small negative lyapunov exponent (in order to distinguish later kinematically inaccessible area)            
         end
     
         averageLyapunov[ix, iy] = lyapunov
@@ -309,26 +339,31 @@ function SolveEnergy(energy, parameters, dimension;
 
             if lyapunov < regularThreshold
                 fregSection[ix, iy] = 1
+            else
+                fregSection[ix, iy] = 0
             end
-        else
-            fregSection[ix, iy] = -1
         end
 
         currentTrajectory = zeros(Float64, dimension, dimension)
+        currentTrajectory[ix, iy] = 1
+
         for i = 1:length(result)
             x = result.u[i][sectionCoordinateX]
             y = result.u[i][sectionCoordinateY]
 
-            iix = convert(Int32, round((x - minimumBound) * (dimension - 1) / (maximumBound - minimumBound))) + 1
-            iiy = convert(Int32, round((y - minimumBound) * (dimension - 1) / (maximumBound - minimumBound))) + 1
+            iix = convert(Int32, floor((x - minimumBound) * dimension / (maximumBound - minimumBound))) + 1
+            iiy = convert(Int32, floor((y - minimumBound) * dimension / (maximumBound - minimumBound))) + 1
 
             if averageLyapunov[iix, iiy] <= 0           # Nonzero Lyapunov exponent is always preferred, so any value replaces cells with nonpositive LE
                 averageLyapunov[iix, iiy] = lyapunov
                 countLyapunov[iix, iiy] = 1
                 crossings += 1
 
+                if fregSection[iix, iiy] < 0
+                    fregSection[iix, iiy] = 0
+                end
                 if lyapunov > 0 && lyapunov < regularThreshold
-                    fregSection[iix, iiy] = 1
+                    fregSection[iix, iiy] += 1
                 end
 
             elseif currentTrajectory[iix, iiy] == 0     # No visit yet to this point
@@ -336,6 +371,9 @@ function SolveEnergy(energy, parameters, dimension;
                 countLyapunov[iix, iiy] += 1
                 crossings += 1
 
+                if fregSection[iix, iiy] < 0
+                    fregSection[iix, iiy] = 0
+                end
                 if lyapunov > 0 && lyapunov < regularThreshold
                     fregSection[iix, iiy] += 1
                 end
@@ -364,14 +402,23 @@ function SolveEnergy(energy, parameters, dimension;
     freg = total > 0.0 ? count / total : 0.0        # Fraction of regularity (0 - totally chaotic, 1 - totally regular)
 
     lyapunovs = filter(x -> x > 0, lyapunovs)
+    chaoticLyapunovs = filter(x -> x > regularThreshold, lyapunovs)
 
-    if showFigures
-        pannel1 = contourf(averageLyapunov, title="Average λ [E = $energy, trajectories = $trajectories]")
-        pannel2 = contourf(fregSection, title="freg section (T = $((time_ns() - startTime) / 1E9))")
-        pannel3 = contourf(countLyapunov, title="count lyapunov")
-        pannel4 = histogram(filter(x -> x > regularThreshold, lyapunovs), bins=100, title="Λ = $(maximum(lyapunovs))")
+    if showFigures || !isnothing(savePath)
+        pannel1 = contourf(averageLyapunov, title="Average λ [E = $(round(energy, digits=3)), trajectories = $trajectories]")
+        pannel2 = contourf(fregSection, title="freg (T = $(round((time_ns() - startTime) / 1E9, digits=0)))")
+        pannel3 = contourf(countLyapunov, title="Count")
+        pannel4 = histogram(chaoticLyapunovs, bins=100, label=nothing, title="Λ = $(round(maximum(lyapunovs), sigdigits=4)), λ = $(round(mean(chaoticLyapunovs), sigdigits=3)) ± $(round(var(chaoticLyapunovs), sigdigits=2))")
 
-        display(plot(pannel1, pannel2, pannel3, pannel4))
+        figure = plot(pannel1, pannel2, pannel3, pannel4)
+
+        if showFigures
+            display(plot(figure))
+        end
+        
+        if !isnothing(savePath)
+            savefig(figure, savePath * "PS_$(parameters)_E=$energy.png")
+        end
     end    
     
     @printf("%.0fs: Finished [λ, E] = [%.2f, %.2f], Λ = %.2f, freg = %.2f, %d trajectories, %d crossings\n", (time_ns() - startTime) / 1E9, parameters[1], energy, maximum(lyapunovs), freg, trajectories, crossings)
@@ -399,8 +446,8 @@ function LyapunovExponents(energy, parameters, numTrajectories;
 
     trajectory = 0
     while trajectory < numTrajectories
-        P = (max - min) * rand() + min
-        Q = (max - min) * rand() + min
+        P = (maximumBound - minimumBound) * rand() + minimumBound
+        Q = (maximumBound - minimumBound) * rand() + minimumBound
 
         x = SectionPlane(sectionPlane, P, Q)
         if !InitialCondition!(x, energy, parameters)
