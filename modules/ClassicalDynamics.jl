@@ -24,8 +24,6 @@ mutable struct IntegrationParameters
     historyLyapunovExponent
 end    
 
-# disable_logging(Logging.Info)
-
 """ 
     Rescales the Φ matrix and saves the Lyapunov exponent
     Called periodically (every "saveStep" time units) - SavingCallback
@@ -171,7 +169,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
             end
         end
 
-        @info "Nonconvergent trajectory with initialCondition = $initialCondition"
+        @info "Nonconvergent trajectory with initialCondition = $initialCondition: retcode = $(solution.retcode), result = $(integrationParameters.result)"
         return [], 0, []    # Unstable trajectories can be distinguished later because their LE is exactly 0
     end
 
@@ -310,8 +308,11 @@ function SolveEnergy(energy, parameters, dimension;
 
         m = InitialConditions(ic, energy, parameters, missingCoordinate)
 
-        if length(m) > 0
-            ic[missingCoordinate] = rand(m)
+        result = []
+        lyapunov = -0.01                        # Unable to find initial condition - return small negative lyapunov exponent (in order to distinguish later kinematically inaccessible area)            
+
+        for n in m
+            ic[missingCoordinate] = n
 
             calculationTimeout = 0
             if length(calculationTimes) > 0
@@ -322,10 +323,12 @@ function SolveEnergy(energy, parameters, dimension;
 
             calculationTime = @elapsed result, lyapunov = TrajectoryLyapunov(ic, parameters; timeout=calculationTimeout, savePath=savePath, showFigures=false, sectionPlane=sectionPlane, regularThreshold=0.9 * regularThreshold, kwargs...)
 
-            append!(calculationTimes, calculationTime)
-        else
-            result = []
-            lyapunov = -0.01                        # Unable to find initial condition - return small negative lyapunov exponent (in order to distinguish later kinematically inaccessible area)            
+            if lyapunov > 0 && length(result) > 0
+                append!(calculationTimes, calculationTime)
+                break
+            else
+                @info "Trajectory don't cross the section"
+            end
         end
     
         averageLyapunov[ix, iy] = lyapunov
@@ -408,7 +411,11 @@ function SolveEnergy(energy, parameters, dimension;
         pannel1 = contourf(averageLyapunov, title="Average λ [E = $(round(energy, digits=3)), trajectories = $trajectories]")
         pannel2 = contourf(fregSection, title="freg (T = $(round((time_ns() - startTime) / 1E9, digits=0)))")
         pannel3 = contourf(countLyapunov, title="Count")
-        pannel4 = histogram(chaoticLyapunovs, bins=100, label=nothing, title="Λ = $(round(maximum(lyapunovs), sigdigits=4)), λ = $(round(mean(chaoticLyapunovs), sigdigits=3)) ± $(round(var(chaoticLyapunovs), sigdigits=2))")
+        if length(chaoticLyapunovs) > 0
+            pannel4 = histogram(chaoticLyapunovs, bins=100, label=nothing, title="Λ = $(round(maximum(lyapunovs), sigdigits=4)), λ = $(round(mean(chaoticLyapunovs), sigdigits=3)) ± $(round(var(chaoticLyapunovs), sigdigits=2))")
+        else
+            pannel4 = plot()
+        end
 
         figure = plot(pannel1, pannel2, pannel3, pannel4)
 
@@ -417,11 +424,17 @@ function SolveEnergy(energy, parameters, dimension;
         end
         
         if !isnothing(savePath)
-            savefig(figure, savePath * "PS_$(parameters)_E=$energy.png")
+            savefig(figure, savePath * "PS($(sectionCoordinateX)$(sectionCoordinateY)$(sectionPlane))_$(parameters)_E=$(round(energy, digits=3)).png")
         end
     end    
     
-    @printf("%.0fs: Finished [λ, E] = [%.2f, %.2f], Λ = %.2f, freg = %.2f, %d trajectories, %d crossings\n", (time_ns() - startTime) / 1E9, parameters[1], energy, maximum(lyapunovs), freg, trajectories, crossings)
+    if length(chaoticLyapunovs) > 0
+        maximumLyapunov = maximum(chaoticLyapunovs)
+    else
+        maximumLyapunov = 0
+    end
+
+    @printf("%.0fs: Finished [λ, E] = [%.2f, %.2f], Λ = %.2f, freg = %.2f, %d trajectories, %d crossings\n", (time_ns() - startTime) / 1E9, parameters[1], energy, maximumLyapunov, freg, trajectories, crossings)
 
     return averageLyapunov, freg, trajectories, lyapunovs
 end

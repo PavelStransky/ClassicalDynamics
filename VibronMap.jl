@@ -1,5 +1,6 @@
 using Distributed
 using Random
+using Logging
 
 workers = 8
 
@@ -9,6 +10,8 @@ end
 
 @everywhere include("models/Vibron.jl")
 @everywhere include("modules/ClassicalDynamics.jl")
+
+@everywhere disable_logging(Logging.Info)
 
 """ Calculates Poincaré sections with Lyapunov exponents for various energies
     Parallel calculation, takes usually days to finish
@@ -22,7 +25,7 @@ end
         end
     end
 
-    time = @elapsed averageLyapunov, freg, trajectories, lyapunovs = SolveEnergy(energy, parameters, dimension, savePath=path, sectionPlane=sectionPlane, timeout=3600, randomize=true)
+    time = @elapsed averageLyapunov, freg, trajectories, lyapunovs = SolveEnergy(energy, parameters, dimension, savePath=path, timeout=7200, showFigures=false, randomize=true)
 
     chaos = 0
     total = 0
@@ -42,9 +45,19 @@ end
             chaos += 1
             meanLyapunovChaos += x
         end        
+    end    
+
+    if length(lyapunovs) == 0
+        maxλ = 0
+        meanλ = 0
+        varλ = 0
+    else
+        maxλ = maximum(lyapunovs)
+        meanλ = mean(lyapunovs)
+        varλ = var(lyapunovs)
     end
 
-    result = [energy, parameters[1], total, chaos, error, freg, total > 0 ? meanLyapunov / total : 0, chaos > 0 ? meanLyapunovChaos / chaos : 0, maximumLyapunov, myid(), time, trajectories]
+    result = [energy, parameters[1], total, chaos, error, freg, total > 0 ? meanLyapunov / total : 0, chaos > 0 ? meanLyapunovChaos / chaos : 0, length(lyapunovs), maxλ, meanλ, varλ, myid(), time, trajectories]
 
     open(path * file, "a") do io
         println(io, result)
@@ -53,7 +66,7 @@ end
     return true
 end
 
-function RunMapC(; C=0.2, path="", dimension=101, step=0.1, sectionPlane=1)
+function RunMapC(; C=0.2, path="", dimension=101, step=0.1, sectionPlane=3)
     path *= "Vibron_"
 
     file = "Map_dim=$(dimension)_C=$C.txt"
@@ -70,7 +83,7 @@ function RunMapC(; C=0.2, path="", dimension=101, step=0.1, sectionPlane=1)
 end
 
 """ Calculates freg for one given A and C """
-function RunAC(; C=0.2, A=0.4, path="", dimension=101, step=0.01, sectionPlane=1)
+function RunAC(; C=0.2, A=0.4, path="", dimension=101, step=0.01, sectionPlane=3)
     path *= "Vibron_"
 
     file = "Energy_dim=$(dimension)_$([A, C]).txt"
