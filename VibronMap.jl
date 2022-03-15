@@ -47,14 +47,16 @@ end
         end        
     end    
 
+    varλ = 0
     if length(lyapunovs) == 0
         maxλ = 0
         meanλ = 0
-        varλ = 0
     else
         maxλ = maximum(lyapunovs)
         meanλ = mean(lyapunovs)
-        varλ = var(lyapunovs)
+        if length(lyapunovs) > 1
+            varλ = var(lyapunovs)
+        end
     end
 
     result = [energy, parameters[1], total, chaos, error, freg, total > 0 ? meanLyapunov / total : 0, chaos > 0 ? meanLyapunovChaos / chaos : 0, length(lyapunovs), maxλ, meanλ, varλ, myid(), time, trajectories]
