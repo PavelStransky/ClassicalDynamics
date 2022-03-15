@@ -5,6 +5,7 @@ using Statistics
 using Plots
 using Printf
 using Logging
+using ColorSchemes
 
 pyplot(size = (1200,1000))
 
@@ -49,12 +50,16 @@ function RescaleΦ!(u, t, integrator)
         integrationParameters.historyLyapunovExponent = lyapunovs
     end
 
+    return lyapunov
+end
+
+function TimeoutCondition(u, t, integrator)
+    integrationParameters = integrator.p
     if(integrationParameters.timeout > 0 && time_ns() - integrationParameters.startTime > integrationParameters.timeout)
         integrationParameters.result = :Timeout
-        terminate!(integrator)
+        return true
     end
-
-    return lyapunov
+    return false
 end
 
 
@@ -81,11 +86,6 @@ function Section!(integrator)
 
     if (lm > 0) && ((lv / lm < integrationParameters.relativeFluctuationThreshold) || (lm < integrationParameters.regularThreshold))
         integrationParameters.result = :Converged
-        return terminate!(integrator)
-    end
-
-    if(integrationParameters.timeout > 0 && time_ns() - integrationParameters.startTime > integrationParameters.timeout)
-        integrationParameters.result = :Timeout
         return terminate!(integrator)
     end
 end
@@ -148,7 +148,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
     # Main part - calling the ODE solver
     fnc = ODEFunction(EquationOfMotion!)
     problem = ODEProblem(fnc, x0, timeInterval, integrationParameters)
-    callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(RescaleΦ!, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, Section!, nothing, save_positions=(false, true)))
+    callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(RescaleΦ!, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, Section!, nothing, save_positions=(false, true)), DiscreteCallback(TimeoutCondition, terminate!))
     time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=maximumIterations, isoutofdomain=CheckDomain, verbose=true)
 
     # Print results
@@ -162,7 +162,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
     @debug "retcode = $(solution.retcode), result = $(integrationParameters.result)"
 
     # Save all unstable or nonconvergent trajectories (for debug reasons)
-    if !(solution.retcode == :Success || (solution.retcode == :Terminated && integrationParameters.result != :Timeout))
+    if !(solution.retcode == :Success || (solution.retcode == :Terminated && integrationParameters.result == :Converged))
         if !isnothing(savePath)
             open(savePath * "Nonconvergent_Trajectories.txt", "a") do io
                 println(io, "$parameters\t$energy\t$initialCondition\t$(solution.retcode)")
@@ -246,7 +246,8 @@ function SolveEnergy(energy, parameters, dimension;
         sectionCoordinateX=2,
         sectionCoordinateY=4,
         sectionPlane=3,
-        regularThreshold=0.005, 
+        regularThreshold=0.25, 
+        maximumλ=0.01,
         showFigures=true,
         savePath=nothing,
         randomize=false, 
@@ -327,24 +328,26 @@ function SolveEnergy(energy, parameters, dimension;
                 append!(calculationTimes, calculationTime)
                 break
             else
-                @info "Trajectory don't cross the section"
+                @info "Trajectory doesn't cross the section"
             end
         end
     
         averageLyapunov[ix, iy] = lyapunov
-        countLyapunov[ix, iy] = 1
-
         append!(lyapunovs, lyapunov)
 
         if lyapunov > 0
             crossings += 1
             trajectories += 1                       # Number of convergent trajectories
 
+            countLyapunov[ix, iy] = 1
+
             if lyapunov < regularThreshold
                 fregSection[ix, iy] = 1
             else
                 fregSection[ix, iy] = 0
             end
+        else
+            continue
         end
 
         currentTrajectory = zeros(Float64, dimension, dimension)
@@ -386,9 +389,9 @@ function SolveEnergy(energy, parameters, dimension;
         end
     end
 
-    replace!(countLyapunov, 0=>1)                   # Missing trajectories - avoid division by zero
-    averageLyapunov ./= countLyapunov
-    fregSection ./= countLyapunov
+    cl = replace(countLyapunov, 0=>1)                   # Missing trajectories - avoid division by zero
+    averageLyapunov ./= cl
+    fregSection ./= cl
     
     total = 0.0
     count = 0.0
@@ -407,12 +410,20 @@ function SolveEnergy(energy, parameters, dimension;
     lyapunovs = filter(x -> x > 0, lyapunovs)
     chaoticLyapunovs = filter(x -> x > regularThreshold, lyapunovs)
 
+    xs = LinRange(minimumBound, maximumBound, dimension)
+
     if showFigures || !isnothing(savePath)
-        pannel1 = contourf(averageLyapunov, title="Average λ [E = $(round(energy, digits=3)), trajectories = $trajectories]")
-        pannel2 = contourf(fregSection, title="freg (T = $(round((time_ns() - startTime) / 1E9, digits=0)))")
-        pannel3 = contourf(countLyapunov, title="Count")
+        al = deepcopy(averageLyapunov)
+        al[al .>= maximumλ] .= maximumλ
+
+        cl = replace(countLyapunov, 0=>-1)
+        cl = cl  ./ maximum(cl)
+
+        pannel1 = contourf(xs, xs, al, levels=LinRange(0, maximumλ, 100), c=:rainbow, clim=(0, maximumλ), title="Average λ [E = $(round(energy, digits=3)), trajectories = $trajectories]")
+        pannel2 = contourf(xs, xs, fregSection, levels=LinRange(-0.1, 1, 100), c=:rainbow, clim=(-0.1, 1), title="freg (T = $(round((time_ns() - startTime) / 1E9, digits=0)))")
+        pannel3 = contourf(xs, xs, cl, levels=LinRange(0, 1, 100), c=:rainbow, clim=(0, 1), title="Count (max = $(maximum(countLyapunov)))")
         if length(chaoticLyapunovs) > 0
-            pannel4 = histogram(chaoticLyapunovs, bins=0:0.005:0.3, label=nothing, title="Λ = $(round(maximum(lyapunovs), sigdigits=4)), λ = $(round(mean(chaoticLyapunovs), sigdigits=3)) ± $(round(var(chaoticLyapunovs), sigdigits=2))")
+            pannel4 = histogram(chaoticLyapunovs, bins=0:0.005:0.3, label=nothing, title="Λ = $(round(maximum(lyapunovs), sigdigits=3)), λ = $(round(mean(chaoticLyapunovs), sigdigits=3)) ± $(round(var(chaoticLyapunovs), sigdigits=2))")
         else
             pannel4 = plot()
         end
