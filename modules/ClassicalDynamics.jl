@@ -316,7 +316,7 @@ function SolveEnergy(energy, parameters, dimension;
 
             calculationTimeout = 0
             if length(calculationTimes) > 0
-                calculationTimeout = 5 * mean(calculationTimes)
+                calculationTimeout = 10 * mean(calculationTimes)
             end
 
             @info "Initial conditions = $ic, timeout = $calculationTimeout"
@@ -412,7 +412,7 @@ function SolveEnergy(energy, parameters, dimension;
         pannel2 = contourf(fregSection, title="freg (T = $(round((time_ns() - startTime) / 1E9, digits=0)))")
         pannel3 = contourf(countLyapunov, title="Count")
         if length(chaoticLyapunovs) > 0
-            pannel4 = histogram(chaoticLyapunovs, bins=100, label=nothing, title="Λ = $(round(maximum(lyapunovs), sigdigits=4)), λ = $(round(mean(chaoticLyapunovs), sigdigits=3)) ± $(round(var(chaoticLyapunovs), sigdigits=2))")
+            pannel4 = histogram(chaoticLyapunovs, bins=0:0.005:0.3, label=nothing, title="Λ = $(round(maximum(lyapunovs), sigdigits=4)), λ = $(round(mean(chaoticLyapunovs), sigdigits=3)) ± $(round(var(chaoticLyapunovs), sigdigits=2))")
         else
             pannel4 = plot()
         end
