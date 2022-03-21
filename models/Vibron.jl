@@ -36,22 +36,38 @@ function InitialConditions(x0, e, parameters, coordinate)
     s2 = 2.0 - (P*P + p*p + Q*Q + q*q)
     if s2 >= 0
         try
+            xs = LinRange(-sqrt(2), sqrt(2), 1000)
+
             if coordinate == 1
-                result = roots(x -> Energy((x, p, Q, q), parameters) - e, -sqrt(2)..sqrt(2))
+                ys = [Energy((x, p, Q, q), parameters) for x in xs]
+                xs = [x for (x, y) in zip(xs, ys) if !isnan(y)]
+                result = roots(x -> Energy((x, p, Q, q), parameters) - e, minimum(xs)..maximum(xs))
+            
             elseif coordinate == 2
-                result = roots(x -> Energy((P, x, Q, q), parameters) - e, -sqrt(2)..sqrt(2))
+                ys = [Energy((P, x, Q, q), parameters) for x in xs]
+                xs = [x for (x, y) in zip(xs, ys) if !isnan(y)]
+                result = roots(x -> Energy((P, x, Q, q), parameters) - e, minimum(xs)..maximum(xs))
+            
             elseif coordinate == 3
-                result = roots(x -> Energy((P, p, x, q), parameters) - e, -sqrt(2)..sqrt(2))
+                ys = [Energy((P, p, x, q), parameters) for x in xs]
+                xs = [x for (x, y) in zip(xs, ys) if !isnan(y)]
+                result = roots(x -> Energy((P, p, x, q), parameters) - e, minimum(xs)..maximum(xs))
+
             elseif coordinate == 4
-                result = roots(x -> Energy((P, p, Q, x), parameters) - e, -sqrt(2)..sqrt(2))
+                ys = [Energy((P, p, Q, x), parameters) for x in xs]
+                xs = [x for (x, y) in zip(xs, ys) if !isnan(y)]
+                result = roots(x -> Energy((P, p, Q, x), parameters) - e, minimum(xs)..maximum(xs))
             end
         catch e
         end
     end
 
-    r = zeros(Float64, length(result))
+    r = zeros(Float64, 0)
     for i = 1:length(result)
-        r[i] = mid(result[i].interval)
+        m = mid(result[i].interval)
+        if !isnan(m)
+            append!(r, m)
+        end
     end
 
     return sort(r, rev=true)
