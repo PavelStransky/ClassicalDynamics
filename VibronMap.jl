@@ -17,7 +17,7 @@ end
     Parallel calculation, takes usually days to finish
 """
 
-@everywhere function SolveItem(energy, parameters, dimension; file="Vibron.txt", path="", alreadySolved=[], sectionPlane=2)    
+@everywhere function SolveItem(energy, parameters, dimension; file="Vibron.txt", path="", alreadySolved=[])    
     for (E, λ) in alreadySolved
         if isapprox(E, energy) && isapprox(parameters[1], λ)
             println("Skipped $parameters, E=$energy, dim=$dimension (already calculated)")
@@ -25,7 +25,7 @@ end
         end
     end
 
-    time = @elapsed averageLyapunov, freg, trajectories, lyapunovs = SolveEnergy(energy, parameters, dimension, savePath=path, timeout=7200, showFigures=false, randomize=true)
+    time = @elapsed averageLyapunov, freg, trajectories, lyapunovs = SolveEnergy(energy, parameters, dimension, savePath=path, timeout=10000, showFigures=false, randomize=true, tolerance=1e-8)
 
     chaos = 0
     total = 0
@@ -68,7 +68,7 @@ end
     return true
 end
 
-function RunMapC(; C=0.2, path="", dimension=101, step=0.1, sectionPlane=3)
+function RunMapC(; C=0.2, path="", dimension=101, step=0.1)
     path *= "Vibron_"
 
     file = "Map_dim=$(dimension)_C=$C.txt"
@@ -79,13 +79,13 @@ function RunMapC(; C=0.2, path="", dimension=101, step=0.1, sectionPlane=3)
     println("To be calculated $(length(input)).")
     println("Already calculated $(length(alreadySolved)) points.")
 
-    pmap((args)->SolveItem(args...; file=file, path=path, alreadySolved=alreadySolved, sectionPlane=sectionPlane), input)
+    pmap((args)->SolveItem(args...; file=file, path=path, alreadySolved=alreadySolved), input)
 
     return
 end
 
 """ Calculates freg for one given A and C """
-function RunAC(; C=0.2, A=0.4, path="", dimension=101, step=0.01, sectionPlane=3)
+function RunAC(; C=0.2, A=0.4, path="", dimension=101, step=0.01)
     path *= "Vibron_"
 
     file = "Energy_dim=$(dimension)_$([A, C]).txt"
@@ -96,7 +96,7 @@ function RunAC(; C=0.2, A=0.4, path="", dimension=101, step=0.01, sectionPlane=3
     println("To be calculated $(length(input)).")
     println("Already calculated $(length(alreadySolved)) points.")
 
-    pmap((args)->SolveItem(args...; file=file, path=path, alreadySolved=alreadySolved, sectionPlane=sectionPlane), input)    
+    pmap((args)->SolveItem(args...; file=file, path=path, alreadySolved=alreadySolved), input)    
 
     return
 end
