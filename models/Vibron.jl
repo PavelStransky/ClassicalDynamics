@@ -1,10 +1,10 @@
 using Random
 using IntervalRootFinding
 
-# px = p
-# py = P
-# x = q
-# y = Q
+# px = p 2
+# py = P 1
+# x = q  4
+# y = Q  3
 
 """ Energy of the Dicke model """
 function Energy(x, parameters)
