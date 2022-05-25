@@ -420,7 +420,7 @@ function SolveEnergy(energy, parameters, dimension;
         cl = cl  ./ maximum(cl)
 
         pannel1 = contourf(xs, xs, al, levels=LinRange(0, maximumλ, 100), c=:rainbow, clim=(0, maximumλ), title="Average λ [E = $(round(energy, digits=3)), trajectories = $trajectories]")
-        pannel2 = contourf(xs, xs, fregSection, levels=LinRange(-0.1, 1, 100), c=:rainbow, clim=(-0.1, 1), title="freg (T = $(round((time_ns() - startTime) / 1E9, digits=0)))")
+        pannel2 = contourf(xs, xs, fregSection, levels=LinRange(-0.1, 1, 100), c=:rainbow, clim=(-0.1, 1), title="freg = $(round(freg, digits=3)) (T = $(round((time_ns() - startTime) / 1E9, digits=0)))")
         pannel3 = contourf(xs, xs, cl, levels=LinRange(0, 1, 100), c=:rainbow, clim=(0, 1), title="Count (max = $(maximum(countLyapunov)))")
         if length(chaoticLyapunovs) > 0
             pannel4 = histogram(chaoticLyapunovs, bins=0:0.005:0.3, label=nothing, title="Λ = $(round(maximum(lyapunovs), sigdigits=3)), λ = $(round(mean(chaoticLyapunovs), sigdigits=3)) ± $(round(var(chaoticLyapunovs), sigdigits=2))")
