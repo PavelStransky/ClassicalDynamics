@@ -120,17 +120,17 @@ function EquationOfMotion!(dx, x, parameters, t)
     A2 = -q2 * q2 / s2 + s2 + η2 * q2
     B = 2 * q1 * s1 + 2 * q2 * s2 + η1 * Σ1 + η2 * Σ2
 
-    c1 = η1 - x1 / s1
+    c1 = η1 - q1 / s1
     C1 = p1 * c1
 
-    c2 = η2 - x2 / s2
+    c2 = η2 - q2 / s2
     C2 = p2 * c2
 
-    r1 = x1 / s1
-    r2 = x2 / s2
+    r1 = q1 / s1
+    r2 = q2 / s2
 
-    dx[1] = -ξ * x1 + Ξ * A1 * B
-    dx[2] = -ξ * x2 + Ξ * A2 * B
+    dx[1] = -ξ * q1 + Ξ * A1 * B
+    dx[2] = -ξ * q2 + Ξ * A2 * B
     dx[3] = ξ * p1 - Ξ * C1 * B
     dx[4] = ξ * p2 - Ξ * C2 * B
 
@@ -140,13 +140,13 @@ function EquationOfMotion!(dx, x, parameters, t)
     Hq1q2 = -2 * Ξ * A1 * A2
 
     Hq2p1 = -2 * Ξ * A2 * C1
-    Hq2p2 = -Ξ * (2 * A2 * C2 - p2 / s2 + (r2^2 + 1) * B)
+    Hq2p2 = -Ξ * (2 * A2 * C2 - p2 / s2 * (r2^2 + 1) * B)
     Hq2q2 = ξ - Ξ * (2 * A2 * A2 + (-r2^3 - 3 * r2 + η2) * B)
 
-    Hp1p1 = ξ - Ξ * (2 * C1 * C1 + ((-p1 * p1 * x1) / s1^3 + c1) * B)
+    Hp1p1 = ξ - Ξ * (2 * C1 * C1 + ((-p1 * p1 * q1) / s1^3 + c1) * B)
     Hp1p2 = -2 * Ξ * C1 * C2
 
-    Hp1p1 = ξ - Ξ * (2 * C2 * C2 + ((-p2 * p2 * x2) / s2^3 + c2) * B)
+    Hp2p2 = ξ - Ξ * (2 * C2 * C2 + ((-p2 * p2 * q2) / s2^3 + c2) * B)
     
     j = [-Hq1p1 -Hq1p2 -Hq1q1 -Hq1q2;
          -Hq2p1 -Hq2p2 -Hq1q2 -Hq2q2;
