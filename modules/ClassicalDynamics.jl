@@ -246,7 +246,7 @@ function SolveEnergy(energy, parameters, dimension;
         sectionCoordinateX=2,
         sectionCoordinateY=4,
         sectionPlane=3,
-        regularThreshold=0.005, 
+        regularThreshold=0.01, 
         maximumλ=0.25,
         showFigures=true,
         savePath=nothing,
@@ -322,7 +322,7 @@ function SolveEnergy(energy, parameters, dimension;
 
             @info "Initial conditions = $ic, timeout = $calculationTimeout"
 
-            calculationTime = @elapsed result, lyapunov = TrajectoryLyapunov(ic, parameters; timeout=calculationTimeout, savePath=savePath, showFigures=false, sectionPlane=sectionPlane, regularThreshold=0.9 * regularThreshold, kwargs...)
+            calculationTime = @elapsed result, lyapunov = TrajectoryLyapunov(ic, parameters; timeout=calculationTimeout, savePath=savePath, showFigures=false, sectionPlane=sectionPlane, regularThreshold=regularThreshold, kwargs...)
 
             if lyapunov > 0 && length(result) > 0
                 append!(calculationTimes, calculationTime)
