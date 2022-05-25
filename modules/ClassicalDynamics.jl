@@ -7,7 +7,7 @@ using Printf
 using Logging
 using ColorSchemes
 
-pyplot(size = (1200,1000))
+gr(size = (1200,1000))
 
 mutable struct IntegrationParameters
     dimension
