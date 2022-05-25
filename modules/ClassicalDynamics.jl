@@ -162,7 +162,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
     @debug "retcode = $(solution.retcode), result = $(integrationParameters.result)"
 
     # Save all unstable or nonconvergent trajectories (for debug reasons)
-    if !(solution.retcode == :Success || (solution.retcode == :Terminated && (integrationParameters.result == :Converged || integrationParameters.result == :maximumSectionPoints)))
+    if !(solution.retcode == :Success || (solution.retcode == :Terminated && (integrationParameters.result == :Converged || integrationParameters.result == :MaximumSectionPoints)))
         if !isnothing(savePath)
             open(savePath * "Nonconvergent_Trajectories.txt", "a") do io
                 println(io, "$parameters\t$energy\t$initialCondition\t$(solution.retcode)")
