@@ -74,7 +74,7 @@ function RunMap(; η1=0.5, η2=-0.5, path="", dimension=101, step=0.1)
     file = "Map_dim=$(dimension)_x1=$(η1)_x2=$(η2).txt"
     alreadySolved = ReadMap(path * file)
 
-    input = shuffle([(energy, [ξ, η1, η2], dimension) for energy in -1.2:step:1, ξ in 0:step:1])
+    input = shuffle([(energy, [ξ, η1, η2], dimension) for energy in -1:step:1, ξ in 0:step:1])
 
     println("To be calculated $(length(input)).")
     println("Already calculated $(length(alreadySolved)) points.")
