@@ -3,7 +3,7 @@ import os
 fnames = []
 energies = []
 
-dir = 'd:/results/Vibron/freg/A=0.4'
+dir = 'D:/results/TwoFluid/1'
 
 for fname in os.listdir(dir):
     start = fname.find("]_E=") + 4

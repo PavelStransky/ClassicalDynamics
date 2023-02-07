@@ -2,7 +2,7 @@ using Distributed
 using Random
 using Logging
 
-workers = 24
+workers = 4
 
 if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
@@ -120,3 +120,5 @@ function ReadMap(file="")
 
     return Eλ
 end
+
+RunEnergy(; ξ=0.5, η1=1.46, η2=-0.95, path="d:\\results\\TwoFluid\\", step=0.008)

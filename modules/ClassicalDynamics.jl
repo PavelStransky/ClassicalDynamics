@@ -9,7 +9,8 @@ using ColorSchemes
 
 pyplot(size = (1200,1000))
 
-mutable struct IntegrationParameters
+
+mutable struct LyapunovIntegrationParameters
     dimension
     modelParameters
     energy
@@ -24,6 +25,11 @@ mutable struct IntegrationParameters
     lyapunovExponent
     historyLyapunovExponent
 end    
+
+struct SimpleIntegrationParameters
+    modelParameters
+    energy
+end
 
 """ 
     Rescales the Φ matrix and saves the Lyapunov exponent
@@ -140,7 +146,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
 
     energy = Energy(x0, parameters)
 
-    integrationParameters = IntegrationParameters(phaseSpaceDimension, parameters, energy, relaxationTime, relativeFluctuationThreshold, regularThreshold, maximumSectionPoints, 0, time_ns(), 1E9 * timeout, :Start, 1, rand(lyapunovSeriesLength))
+    integrationParameters = LyapunovIntegrationParameters(phaseSpaceDimension, parameters, energy, relaxationTime, relativeFluctuationThreshold, regularThreshold, maximumSectionPoints, 0, time_ns(), 1E9 * timeout, :Start, 1, rand(lyapunovSeriesLength))
 
     sectionCondition = SectionCondition(sectionPlane) 
     lyapunovs = SavedValues(Float64, Float64)                                              # For a graph with the time evolution of Lyapunov exponents
@@ -221,7 +227,7 @@ function PoincareSection(energy, parameters, numTrajectories;
 
         @info "$(length(initialConditions)) IC = $x, E = $(Energy(x, parameters))"
 
-        solution, lyapunov = TrajectoryLyapunov(x, parameters; maximumSectionPoints=1000, sectionPlane=sectionPlane, showFigures=false, relativeFluctuationThreshold=0, regularThreshold=0, kwargs...)
+        solution, lyapunov = TrajectoryLyapunov(x, parameters; sectionPlane=sectionPlane, showFigures=false, relativeFluctuationThreshold=0, regularThreshold=0, kwargs...)
         if lyapunov <= 0
             continue                    # Unstable or nonconvergent trajectory
         end
@@ -450,7 +456,6 @@ function SolveEnergy(energy, parameters, dimension;
     return averageLyapunov, freg, trajectories, lyapunovs
 end
 
-
 """ Calculates Lyapunov exponents for a given energy and number of trajectories """
 function LyapunovExponents(energy, parameters, numTrajectories; 
         minimumBound=-sqrt(2), 
@@ -470,17 +475,24 @@ function LyapunovExponents(energy, parameters, numTrajectories;
 
     trajectory = 0
     while trajectory < numTrajectories
-        P = (maximumBound - minimumBound) * rand() + minimumBound
-        Q = (maximumBound - minimumBound) * rand() + minimumBound
+        x = (maximumBound - minimumBound) * rand() + minimumBound
+        y = (maximumBound - minimumBound) * rand() + minimumBound
+   
+        ic = zeros(Float64, 4)
+        ic[sectionCoordinateX] = x
+        ic[sectionCoordinateY] = y
 
-        x = SectionPlane(sectionPlane, P, Q)
-        if !InitialCondition!(x, energy, parameters)
-            continue
+        m = InitialConditions(ic, energy, parameters, missingCoordinate)
+
+        if length(m) == 0
+            continue                    # Failure of generating an initial condition
         end
-        
-        x = collect(skipmissing(x))
 
-        ps, lyapunov, lyapunovs = TrajectoryLyapunov(x, parameters; showFigures=false, sectionPlane=sectionPlane, kwargs...)
+        ic[missingCoordinate] = rand(m)
+
+        @info "$(length(m)) IC = $ic, E = $(Energy(ic, parameters))"
+        
+        ps, lyapunov, lyapunovs = TrajectoryLyapunov(ic, parameters; showFigures=false, sectionPlane=sectionPlane, kwargs...)
 
         if lyapunov <= 0
             continue
@@ -515,22 +527,25 @@ function Trajectory(initialCondition, parameters;
 
     energy = Energy(x0, parameters)
 
+    phaseSpaceDimension = length(initialCondition)
+    integrationParameters = SimpleIntegrationParameters(parameters, energy)
+
     fnc = ODEFunction(EquationOfMotion!)
-    problem = ODEProblem(fnc, x0, timeInterval, parameters)
+    problem = ODEProblem(fnc, x0, timeInterval, integrationParameters)
     time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, maxiters=maxIterations, isoutofdomain=CheckDomain, verbose=verbose)
 
     println("Calculation time = $time, Trajectory time = $(solution.t[end]), Final energy = $(Energy(solution[end], parameters))")
 
     # Show both pairs of canonically conjugated variables
-    pannel1 = plot(solution[1,:], solution[3,:], lw=2)
-    pannel2 = plot(solution[2,:], solution[4,:], lw=2)
+    pannel1 = plot(solution, idxs=(1,3), lw=2)
+    pannel2 = plot(solution, idxs=(2,4), lw=2)
     display(plot(pannel1, pannel2, layout=2))
 end
 
 """ Runs various methods to solve differential equations for the trajectory 
     For test purposes only!
 """ 
-function TestTrajectory(x, parameters)
+function TestTrajectory(x, parameters; sectionPlane=3)
     pyplot(size = (2200,1000))
     display(plot())
 
@@ -545,27 +560,28 @@ function TestTrajectory(x, parameters)
     rosenbrockW = [Rosenbrock23(), Rosenbrock32(), RosenbrockW6S4OS(), ROS34PW1a(), ROS34PW1b(), ROS34PW2(), ROS34PW3()]
     stabilizedRK = [ROCK2(), ROCK4(), RKC(), SERK2(), ESERK4(), ESERK5()]
 
-    for method in explicitRK
-        x0 = zeros(20)
-        x0[1:4] = x
-        x0[5:end] = Matrix{Float64}(I, 4, 4)
+    phaseSpaceDimension = length(initialCondition)
+    energy = Energy(x, parameters)
 
-        resize!(parameters, 4)
-        params = [parameters..., Energy(x0, parameters), 0, 1e-5, 0.001, 10000, 0, 1]         
-        # λ, δ, ω, ω₀, 5=energy, 6=relaxationTime, 7=relativeFluctuationThreshold, 8=regularThreshold, 9=maximum number of points in Poincare section, 
-        #              10=num points in the Poincaré section, 11=current Lyapunov exponent 
-        append!(params, rand(200))                                            
+    for method in explicitRK
+        # Initial condition, including the tangent dynamics
+        x0 = zeros(phaseSpaceDimension * (phaseSpaceDimension + 1))
+        x0[1:phaseSpaceDimension] = initialCondition
+        x0[(phaseSpaceDimension + 1):end] = Matrix{Float64}(I, phaseSpaceDimension, phaseSpaceDimension)
+
+        integrationParameters = LyapunovIntegrationParameters(phaseSpaceDimension, parameters, energy, 0, 1E-5, 0.001, 10000, 0, time_ns(), 0, :Start, 1, rand(200))
 
         fnc = ODEFunction(EquationOfMotion!)
-        problem = ODEProblem(fnc, x0, (0, 1e6), params)
+        problem = ODEProblem(fnc, x0, (0, 1e6), integrationParameters)
 
         lyapunovs = SavedValues(Float64, Float64)                                              # For a graph of Lyapunov exponents
-        callback = CallbackSet(SavingCallback(rescale!, lyapunovs, saveat=2:2:1e6), ContinuousCallback(sectionCondition2, section!, nothing, save_positions=(false, true)), ManifoldProjection(energyConservation!, save=false))
+
+        callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(RescaleΦ!, lyapunovs, saveat=2:2:1e6), DiscreteCallback(TimeoutCondition, terminate!))
         time = @elapsed solution = solve(problem, method, reltol=1e-8, abstol=1e-8, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=1E8, isoutofdomain=CheckDomain, verbose=true)    
 
-        lyapunov = mean(params[12:end])
-        lv = var(params[12:end])
-
+        lyapunov = mean(integrationParameters.historyLyapunovExponent)
+        lv = var(integrationParameters.historyLyapunovExponent)
+    
         println("Time = $time, Lyapunov = $lyapunov ± $lv")
         println(solution.retcode)
 
