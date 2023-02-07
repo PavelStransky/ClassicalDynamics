@@ -6,7 +6,7 @@ function Energy(x, parameters)
     P, p, Q, q = x
     λ, δ, ω, ω₀  = parameters
 
-    s2 = 1.0 - 0.25 * (P*P - Q*Q)
+    s2 = 1.0 - 0.25 * (P*P + Q*Q)
     if s2 < 0.0
         return NaN
     end
