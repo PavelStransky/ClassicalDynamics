@@ -24,7 +24,7 @@ end
         end
     end
 
-    time = @elapsed averageLyapunov, freg, trajectories, lyapunovs = SolveEnergy(energy, parameters, dimension, savePath=path, sectionPlane=2, sectionCoordinateX=1, sectionCoordinateY=3, showFigures=false)
+    time = @elapsed averageLyapunov, freg, trajectories, lyapunovs = SolveEnergy(energy, parameters, dimension, savePath=path, sectionPlane=2, sectionCoordinateX=3, sectionCoordinateY=1, minimumBound=-2, maximumBound=2, showFigures=false)
 
     chaos = 0
     total = 0
