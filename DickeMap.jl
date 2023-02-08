@@ -10,6 +10,8 @@ end
 @everywhere include("models/Dicke.jl")
 @everywhere include("modules/ClassicalDynamics.jl")
 
+@everywhere disable_logging(Logging.Info)
+
 """ Calculates Poincaré sections with Lyapunov exponents for various energies
     Parallel calculation, takes usually days to finish
 """
@@ -22,7 +24,7 @@ end
         end
     end
 
-    time = @elapsed averageLyapunov, maximumLyapunov, freg, trajectories = SolveEnergy(energy, parameters, dimension, savePath=path, sectionPlane=2, sectionCoordinateX=1, sectionCoordinateY=3)
+    time = @elapsed averageLyapunov, freg, trajectories, lyapunovs = SolveEnergy(energy, parameters, dimension, savePath=path, sectionPlane=2, sectionCoordinateX=1, sectionCoordinateY=3, showFigures=false)
 
     chaos = 0
     total = 0
@@ -44,13 +46,25 @@ end
         end        
     end
 
-    result = [energy, parameters[1], total, chaos, error, freg, total > 0 ? meanLyapunov / total : 0, chaos > 0 ? meanLyapunovChaos / chaos : 0, maximumLyapunov, myid(), time, trajectories]
+    varλ = 0
+    if length(lyapunovs) == 0
+        maxλ = 0
+        meanλ = 0
+    else
+        maxλ = maximum(lyapunovs)
+        meanλ = mean(lyapunovs)
+        if length(lyapunovs) > 1
+            varλ = var(lyapunovs)
+        end
+    end
+
+    result = [energy, parameters[1], total, chaos, error, freg, total > 0 ? meanLyapunov / total : 0, chaos > 0 ? meanLyapunovChaos / chaos : 0, length(lyapunovs), maxλ, meanλ, varλ, myid(), time, trajectories]
 
     open(path * file, "a") do io
         println(io, result)
     end
 
-    return
+    return true
 end
 
 function RunMap(; δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, step=0.1)
@@ -83,6 +97,9 @@ function RunLambda(; λ=2.0, δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, 
     println("Critical value λc=$λᵪ")
 
     input = [(energy, [λ * λᵪ, δ, ω, ω₀], dimension) for energy in -4:step:30]
+
+    println("To be calculated $(length(input)).")
+    println("Already calculated $(length(alreadySolved)) points.")
 
     pmap((args)->SolveItem(args...; file=file, path=path, alreadySolved=alreadySolved), input)    
 

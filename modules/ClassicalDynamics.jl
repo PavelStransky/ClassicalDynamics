@@ -366,6 +366,10 @@ function SolveEnergy(energy, parameters, dimension;
             iix = convert(Int32, floor((x - minimumBound) * dimension / (maximumBound - minimumBound))) + 1
             iiy = convert(Int32, floor((y - minimumBound) * dimension / (maximumBound - minimumBound))) + 1
 
+            if iix <= 0 || iix > dimension || iiy <= 0 || iiy > dimension
+                continue
+            end
+
             if averageLyapunov[iix, iiy] <= 0           # Nonzero Lyapunov exponent is always preferred, so any value replaces cells with nonpositive LE
                 averageLyapunov[iix, iiy] = lyapunov
                 countLyapunov[iix, iiy] = 1
