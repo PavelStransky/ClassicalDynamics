@@ -9,7 +9,6 @@ using ColorSchemes
 
 pyplot(size = (1200,1000))
 
-
 mutable struct LyapunovIntegrationParameters
     dimension
     modelParameters

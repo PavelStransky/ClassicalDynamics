@@ -96,7 +96,7 @@ function RunLambda(; λ=2.0, δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, 
     λᵪ = sqrt(ω * ω₀) / (1.0 + δ)
     println("Critical value λc=$λᵪ")
 
-    input = [(energy, [λ * λᵪ, δ, ω, ω₀], dimension) for energy in -4:step:30]
+    input = [(energy, [λ * λᵪ, δ, ω, ω₀], dimension) for energy in -4:step:50]
 
     println("To be calculated $(length(input)).")
     println("Already calculated $(length(alreadySolved)) points.")
