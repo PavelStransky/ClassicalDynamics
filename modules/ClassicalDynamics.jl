@@ -9,22 +9,24 @@ using ColorSchemes
 
 pyplot(size = (1200,1000))
 
+""" Parameters for the Lyapunov exponent calculation """
 mutable struct LyapunovIntegrationParameters
-    dimension
-    modelParameters
+    dimension                       # Dimension of the phase space of the problem
+    modelParameters                 
     energy
-    relaxationTime
-    relativeFluctuationThreshold
-    regularThreshold
-    maximumSectionPoints
-    sectionPoints
-    startTime
-    timeout
-    result
-    lyapunovExponent
-    historyLyapunovExponent
+    relaxationTime                  # Minumum time for the Lyapunov exponent evaluation
+    relativeFluctuationThreshold    # Calculation is finished when the variance over mean of the array historyLyapunovExponent is smaller than this value -> Chaotic trajectory
+    regularThreshold                # Calculation is finished when the mean of the array historyLyapunovExponent is smaller than this value -> Regular trajectory
+    maximumSectionPoints            # Calculation is interrupted when the number of points in the Poincaré section exceeds this value
+    sectionPoints                   # Current number of points in the Poincaré section
+    startTime                       # System time in ns (to determine the duration of the calculation)
+    timeout                         # Calculation is interrupted if the duration of the calculation exceeds this number
+    result                          # Flag indicating whether the calculation was successful, whether it was interrupted for some reason or whether it finishes with an error
+    lyapunovExponent                # Last Lyapunov exponent
+    historyLyapunovExponent         # Array of the last Lypunov exponents values; its mean is then taken as the calculated Lyapunov exponent value
 end    
 
+""" Parameters for the calculation without Lyapunov exponents """
 struct SimpleIntegrationParameters
     modelParameters
     energy
@@ -58,6 +60,8 @@ function RescaleΦ!(u, t, integrator)
     return lyapunov
 end
 
+
+""" Check whether the duration of the calculation doesn't exceed a given number - DiscreteCallback """
 function TimeoutCondition(u, t, integrator)
     integrationParameters = integrator.p
     if(integrationParameters.timeout > 0 && time_ns() - integrationParameters.startTime > integrationParameters.timeout)
@@ -118,6 +122,10 @@ end
 
 """ Calculates Lyapunov exponent of an individual trajectory with given initial conditions.
     Works with systems with f=2 degrees of freedom and maximum 4 external parameters!
+
+    Returns - Lyapunov exponent [exact 0 for unstable or nonconvergent trajectories],
+              All points of the Poincaré section (through the sectionPlane) of the calculated trajectory,
+              Time evolution of the Lyapunov exponent
 """
 function TrajectoryLyapunov(initialCondition, parameters; 
         solver=TsitPap8(), 
@@ -131,24 +139,24 @@ function TrajectoryLyapunov(initialCondition, parameters;
         relativeFluctuationThreshold=1e-5, 
         maximumSectionPoints=20000, 
         tolerance=1e-10, 
-        saveStep=2, 
-        lyapunovSeriesLength=500,
+        saveStep=2,                         # How often calculate the Lyapunov exponent and rescale the stability matrix
+        historyLyapunovExponentLength=500,
         timeInterval = (0, 1e5)
     )
 
     phaseSpaceDimension = length(initialCondition)
 
-    # Initial condition, including the tangent dynamics
+    # Initial condition, including the matrix of the tangent dynamics
     x0 = zeros(phaseSpaceDimension * (phaseSpaceDimension + 1))
     x0[1:phaseSpaceDimension] = initialCondition
     x0[(phaseSpaceDimension + 1):end] = Matrix{Float64}(I, phaseSpaceDimension, phaseSpaceDimension)
 
     energy = Energy(x0, parameters)
 
-    integrationParameters = LyapunovIntegrationParameters(phaseSpaceDimension, parameters, energy, relaxationTime, relativeFluctuationThreshold, regularThreshold, maximumSectionPoints, 0, time_ns(), 1E9 * timeout, :Start, 1, rand(lyapunovSeriesLength))
+    integrationParameters = LyapunovIntegrationParameters(phaseSpaceDimension, parameters, energy, relaxationTime, relativeFluctuationThreshold, regularThreshold, maximumSectionPoints, 0, time_ns(), 1E9 * timeout, :Start, 1, rand(historyLyapunovExponentLength))
 
     sectionCondition = SectionCondition(sectionPlane) 
-    lyapunovs = SavedValues(Float64, Float64)                                              # For a graph with the time evolution of Lyapunov exponents
+    lyapunovs = SavedValues(Float64, Float64)               # The whole history of the immediate Lyapunov exponents (for a graph)
 
     # Main part - calling the ODE solver
     fnc = ODEFunction(EquationOfMotion!)
@@ -156,10 +164,11 @@ function TrajectoryLyapunov(initialCondition, parameters;
     callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(RescaleΦ!, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, Section!, nothing, save_positions=(false, true)), DiscreteCallback(TimeoutCondition, terminate!))
     time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=maximumIterations, isoutofdomain=CheckDomain, verbose=true)
 
-    # Print results
+    # Get results
     lyapunov = mean(integrationParameters.historyLyapunovExponent)
     lv = var(integrationParameters.historyLyapunovExponent)
 
+    # Print result
     if length(solution) > 0
         @info "Calculation time = $time, Trajectory time = $(solution.t[end]), Final energy = $(Energy(solution[end], parameters)), PS points = $(integrationParameters.sectionPoints) Λ = $lyapunov ± $lv"
     end
@@ -201,7 +210,7 @@ function PoincareSection(energy, parameters, numTrajectories;
         kwargs...
     )
     
-    figure = scatter()                  # We shall gradually fill the graph with chaotic trajectories
+    figure = scatter()                  # Will be gradually filled with chaotic trajectories
 
     missingCoordinate = FindMissingCoordinate(sectionCoordinateX, sectionCoordinateY, sectionPlane)
 
@@ -244,7 +253,10 @@ function PoincareSection(energy, parameters, numTrajectories;
 end
 
 
-""" Solve all trajectories for a given energy at a lattice x, y = (1...dimension, 1...dimension) """
+""" 
+    Solves stability of all trajectories for a given energy on a lattice x, y = (1...dimension, 1...dimension) in a given Poincaré section. 
+    Used for calculating the freg.
+"""
 function SolveEnergy(energy, parameters, dimension; 
         minimumBound=-sqrt(2.0), 
         maximumBound=sqrt(2.0), 
@@ -459,10 +471,10 @@ function SolveEnergy(energy, parameters, dimension;
     return averageLyapunov, freg, trajectories, lyapunovs
 end
 
-""" Calculates Lyapunov exponents for a given energy and number of trajectories """
+""" Calculates Lyapunov exponents for a given energy and number of trajectories and shows them in one graph. """
 function LyapunovExponents(energy, parameters, numTrajectories; 
-        minimumBound=-sqrt(2), 
-        maximumBound=sqrt(2), 
+        minimumBound=-sqrt(2.0), 
+        maximumBound=sqrt(2.0), 
         sectionCoordinateX=2,
         sectionCoordinateY=4,
         sectionPlane=3, 
