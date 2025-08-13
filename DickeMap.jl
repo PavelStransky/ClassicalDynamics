@@ -91,8 +91,6 @@ function RunLambda(; λ=2.0, δ=1.0, ω=1.0, ω₀=1.0, path="", dimension=101, 
     file = "Energy_dim=$(dimension)_$([λ, δ, ω, ω₀]).txt"
     alreadySolved = ReadMap(path * file)
 
-    println("Already calculated $(length(alreadySolved)) points.")
-
     λᵪ = sqrt(ω * ω₀) / (1.0 + δ)
     println("Critical value λc=$λᵪ")
 
