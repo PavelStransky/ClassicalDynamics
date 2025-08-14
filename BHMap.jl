@@ -5,13 +5,16 @@ using Statistics
 using Distributed
 using Printf
 
-workers = 8
+workers = 10
 
 if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
 end
 
-@everywhere include("models/BoseHubbard.jl")
+@everywhere using Logging
+@everywhere global_logger(ConsoleLogger(stderr, Logging.Warn))
+
+@everywhere include("models/BoseHubbardFull.jl")
 @everywhere include("modules/ClassicalDynamics.jl")
 
 Random.seed!(1234)
@@ -32,16 +35,42 @@ function LyapunovMap(parameters, energy; initialConditionTolerance = 0.0001, num
     end
 
     input = 1:numTrajectories
+    
     time = @elapsed result = pmap((args)->SingleTrajectory(), input)
 
-    println("Elapsed time: $time seconds")
+    L, J, U = parameters
 
-    return result
+    result = filter(x -> x > 0, result)
+    positive = filter(x -> x > 0.005, result)
+
+    println("J = $J, E = $energy");
+    println("Number of trajectories: $(length(result)) ($(length(positive)) unstable)");
+
+    if length(positive) > 0
+        print("Λ = $(mean(positive))")
+        if length(positive) > 1
+            print(" ± $(var(positive))")
+        end
+        println()
+    end
+    
+    if length(result) > 0
+        println("freg = ", 1 - length(positive) / length(result))
+    end
+
+    println("Elapsed time: $time seconds")
+    println()
+
+    return result, positive
 end
 
-for j in LinRange(-1, 1, 101)
-    for energy in LinRange(-1, 1.5, 126)
-        lyapunovs = LyapunovMap((2, j, 1), energy)
+for j in LinRange(-0.2, 0.2, 21)
+    for energy in LinRange(0, 1.5, 76)
+        lyapunovs, positive = LyapunovMap((3, j, 1), energy)
+
+        if length(lyapunovs) == 0
+            continue
+        end
 
         file = "d:/results/bh/lyapunov/3/" * @sprintf("%.2f_%.2f", j, energy) * ".txt"
 
