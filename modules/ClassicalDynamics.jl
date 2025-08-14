@@ -99,6 +99,20 @@ function Section!(integrator)
     end
 end
 
+function ConvergenceCondition(u, t, integrator)
+    integrationParameters = integrator.p
+
+    lyapunovs = integrationParameters.historyLyapunovExponent
+    lv = var(lyapunovs)
+    lm = mean(lyapunovs)
+
+    if (lm > 0) && ((lv / lm < integrationParameters.relativeFluctuationThreshold) || (lm < integrationParameters.regularThreshold))
+        integrationParameters.result = :Converged
+        return true
+    end
+    return false
+end
+
 
 """ Energy conservation - ManifoldProjection """
 function EnergyConservation!(resid, u, integrationParameters, t)
@@ -150,18 +164,24 @@ function TrajectoryLyapunov(initialCondition, parameters;
     x0 = zeros(phaseSpaceDimension * (phaseSpaceDimension + 1))
     x0[1:phaseSpaceDimension] = initialCondition
     x0[(phaseSpaceDimension + 1):end] = Matrix{Float64}(I, phaseSpaceDimension, phaseSpaceDimension)
+    x0[(phaseSpaceDimension + 1):end] = rand(phaseSpaceDimension, phaseSpaceDimension)
 
     energy = Energy(x0, parameters)
 
     integrationParameters = LyapunovIntegrationParameters(phaseSpaceDimension, parameters, energy, relaxationTime, relativeFluctuationThreshold, regularThreshold, maximumSectionPoints, 0, time_ns(), 1E9 * timeout, :Start, 1, rand(historyLyapunovExponentLength))
 
-    sectionCondition = SectionCondition(sectionPlane) 
     lyapunovs = SavedValues(Float64, Float64)               # The whole history of the immediate Lyapunov exponents (for a graph)
 
     # Main part - calling the ODE solver
     fnc = ODEFunction(EquationOfMotion!)
     problem = ODEProblem(fnc, x0, timeInterval, integrationParameters)
-    callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(RescaleΦ!, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, Section!, nothing, save_positions=(false, true)), DiscreteCallback(TimeoutCondition, terminate!))
+
+    if sectionPlane > 0
+        sectionCondition = SectionCondition(sectionPlane) 
+        callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(RescaleΦ!, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, Section!, nothing, save_positions=(false, true)), DiscreteCallback(TimeoutCondition, terminate!))
+    else
+        callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(RescaleΦ!, lyapunovs, saveat=saveStep:saveStep:1e6),  DiscreteCallback(ConvergenceCondition, terminate!), DiscreteCallback(TimeoutCondition, terminate!))
+    end
     time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=maximumIterations, isoutofdomain=CheckDomain, verbose=true)
 
     # Get results
@@ -176,7 +196,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
     @debug "retcode = $(solution.retcode), result = $(integrationParameters.result)"
 
     # Save all unstable or nonconvergent trajectories (for debug reasons)
-    if !(solution.retcode == :Success || (solution.retcode == :Terminated && (integrationParameters.result == :Converged || integrationParameters.result == :MaximumSectionPoints)))
+    if !(solution.retcode == DiffEqBase.ReturnCode.Success || (solution.retcode == DiffEqBase.ReturnCode.Terminated && (integrationParameters.result == :Converged || integrationParameters.result == :MaximumSectionPoints)))
         if !isnothing(savePath)
             open(savePath * "Nonconvergent_Trajectories.txt", "a") do io
                 println(io, "$parameters\t$energy\t$initialCondition\t$(solution.retcode)")
@@ -536,13 +556,13 @@ function Trajectory(initialCondition, parameters;
         tolerance=1e-10
     )
 
-    x0 = zeros(20)
-    x0[1:4] = initialCondition
-    x0[5:end] = Matrix{Float64}(I, 4, 4)
+    phaseSpaceDimension = length(initialCondition)
+    x0 = zeros(phaseSpaceDimension * (phaseSpaceDimension + 1))
+    x0[1:phaseSpaceDimension] = initialCondition
+    x0[(phaseSpaceDimension + 1):end] = Matrix{Float64}(I, phaseSpaceDimension, phaseSpaceDimension)
 
     energy = Energy(x0, parameters)
 
-    phaseSpaceDimension = length(initialCondition)
     integrationParameters = SimpleIntegrationParameters(parameters, energy)
 
     fnc = ODEFunction(EquationOfMotion!)
