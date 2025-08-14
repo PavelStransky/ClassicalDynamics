@@ -19,12 +19,14 @@ function Energy(x, parameters)
 #        s2 = 0.0
     end
 
-    result = -J * (x[1] + x[L]) + U / 4 * s2 * s2
+    result = -J * (x[L + 1] + x[2 * L]) * sqrt(s2) + U / 4 * s2 * s2
 
-    for i = 1:L
+    for i = 1:(L - 1)
         result += -J * (x[i] * x[i + 1] + x[i + L] * x[i + L + 1])
         result += U / 4 * (x[i] * x[i] + x[i + L] * x[i + L]) ^ 2
     end
+
+    result += U / 4 * (x[L] * x[L] + x[2 * L] * x[2 * L]) ^ 2
 
     return result   
 end
@@ -61,6 +63,25 @@ function InitialConditions(x0, e, parameters, coordinate)
     return sort(r, rev=true)
 end
 
+function InitialCondition(energy, parameters, error; maxInitialConditions=1000000)
+    L, J, U = parameters
+
+    for i = 1:maxInitialConditions
+        x = (2 .* rand(2 * L) .- 1) .* sqrt(2)
+
+        e = Energy(x, parameters)
+        if isnan(e)
+            continue
+        end
+
+        if abs(energy - e) < error
+            return x
+        end
+    end
+
+    return nothing
+end
+
 """ True if given trajectory is within the kinematically accessible domain """
 function CheckDomain(x, parameters, t)
     L, J, U = parameters.modelParameters
@@ -77,50 +98,60 @@ function EquationOfMotion!(dx, x, parameters, t)
     end
 
     s = sqrt(s2)
+    Q = x[L + 1] + x[2 * L]
 
     # Trajectories
     for i = 1:L
-        qm1 = i == 1 ? s : x[i - 1]
-        qp1 = i == L ? s : x[i + 1]        
-        dx[i] = J * (qm1 + qp1 - x[i] * (x[L + 1] + x[2 * L]) / s) - U * x[i] * ((x[i] * x[i] + x[i + L] * x[i + L])^2 - s2)
+        a = U * ((x[i] * x[i] + x[i + L] * x[i + L]) - s2)
 
-        pm1 = i == 1 ? 0 : x[i + L - 1]
-        pp1 = i == L ? 0 : x[i + L + 1]
-        dx[i + L] = -J * (pm1 + pp1 - x[i + L] * (x[1] + x[L]) / s) + U * x[i + L] * ((x[i] * x[i] + x[i + L] * x[i + L])^2 - s2)
+        qm1 = i == 1 ? s : x[i + L - 1]
+        qp1 = i == L ? s : x[i + L + 1]        
+        dx[i] = J * (qm1 + qp1 - x[i + L] * Q / s) - a * x[i + L]
+
+        pm1 = i == 1 ? 0 : x[i - 1]
+        pp1 = i == L ? 0 : x[i + 1]
+        dx[i + L] = -J * (pm1 + pp1 - x[i] * Q / s) + a * x[i]
     end
 
     Φ = reshape(x[(2 * L + 1):end], 2 * L, 2 * L)     # Tangent dynamics
     j = zeros(Float64, 2 * L, 2 * L)
 
-    Q = x[L + 1] + x[2 * L]
     s3 = s * s2
 
     for i = 1:(2 * L)
         for k = 1:(2 * L)
             i1 = i
-            i2 = (k + L) % (2 * L)
-            sgn = i2 <= L ? -1 : 1
+            i2 = (k + L - 1) % (2 * L) + 1
+            sgn = i2 > L ? -1 : 1
             m = i1 % L == i2 % L ? 4 : 2
 
-            v = x[i1] * x[i2] * (Q / s3 + U * m)
+            v = x[i1] * x[i2] * (J * Q / s3 + U * m)
 
             if i1 == i2
-                v += J * Q / s + U * (x[i1] * x[i1] + x[i2] * x[i2] - s2)
+                v += J * Q / s + U * (x[i] * x[i] + x[k] * x[k] - s2)
 
                 if i1 == L + 1 || i1 == 2 * L
                     v += 2 * J * x[i1] / s
                 end
-            elseif (i1 <= L && i2 <= L) || (i1 > L && i2 > L)
-                v -= J
-            elseif i1 == L + 1 || i1 == 2 * L
-                v += J * x[i2] / s
-            elseif i2 == L + 1 || i2 == 2 * L
-                v += J * x[i1] / s
+            else
+                if (i1 <= L && i2 <= L && abs(i1 - i2) == 1) || (i1 > L && i2 > L && abs(i1 - i2) == 1)
+                    v -= J
+                end
+                if i1 == L + 1 || i1 == 2 * L
+                    v += J * x[i2] / s
+                end
+                if i2 == L + 1 || i2 == 2 * L
+                    v += J * x[i1] / s
+                end
             end
 
-            j[i, k] = v
+            j[k, i] = sgn * v
         end
     end
 
+    # println(x[1:(2 * L)])
+    # println("j = ", j)
+
+    # j = zeros(Float64, 2 * L, 2 * L)
     dx[(2 * L + 1):end] = j * Φ
 end

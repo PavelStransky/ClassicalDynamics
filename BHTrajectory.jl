@@ -7,12 +7,16 @@ using Plots
 include("models/BoseHubbard.jl")
 include("modules/ClassicalDynamics.jl")
 
-bhParameters = [2,-1,1]
-energy = 0.0
-x0 = [0.0, 0.0, 0.0, 0.0]
-initialCondition = InitialConditions(x0, energy, bhParameters, 1)
+Random.seed!(1234)
+
+bhParameters = (2,-0.2,1)
+energy = 0.4
+initialCondition = InitialCondition(energy, bhParameters, 0.00001)
 
 println("Initial condition: ", initialCondition)
 println("Energy: ", Energy(initialCondition, bhParameters))
 
-Trajectory(initialCondition, bhParameters; verbose=true)
+Trajectory(initialCondition, bhParameters; verbose=true, tolerance=1E-10)
+
+lyapunovs = TrajectoryLyapunov(initialCondition, bhParameters; 
+showFigures=true, sectionPlane=-1, maximumSectionPoints=-1, tolerance=1E-10, saveStep=1)
