@@ -11,16 +11,15 @@ if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
 end
 
-@everywhere using Logging
-@everywhere global_logger(ConsoleLogger(stderr, Logging.Warn))
+# @everywhere using Logging
+# @everywhere global_logger(ConsoleLogger(stderr, Logging.Warn))
 
 @everywhere include("models/BoseHubbardFull.jl")
 @everywhere include("modules/ClassicalDynamics.jl")
 
-Random.seed!(1234)
+# Random.seed!(1234)
 
-function LyapunovMap(parameters, energy; initialConditionTolerance = 0.0001, numTrajectories = 100)
-
+function LyapunovMap(parameters, energy; initialConditionTolerance = 0.0001, numTrajectories = 400)
     function SingleTrajectory()
         initialCondition = InitialCondition(energy, parameters, initialConditionTolerance)
 
@@ -64,15 +63,17 @@ function LyapunovMap(parameters, energy; initialConditionTolerance = 0.0001, num
     return result, positive
 end
 
-for j in LinRange(-0.2, 0.2, 21)
-    for energy in LinRange(0, 1.5, 76)
-        lyapunovs, positive = LyapunovMap((3, j, 1), energy)
+U = 1
+
+for j in LinRange(0.1, 0.1, 1)
+    for energy in LinRange(0, 1, 201)
+        lyapunovs, positive = LyapunovMap((4, j, U), energy)
 
         if length(lyapunovs) == 0
             continue
         end
 
-        file = "d:/results/bh/lyapunov/3/" * @sprintf("%.2f_%.2f", j, energy) * ".txt"
+        file = "d:/results/bh/lyapunov/angel/" * @sprintf("%.3f_%.3f_%.3f", j, U, energy) * ".txt"
 
         open(file, "a") do io
             for lyapunov in lyapunovs
