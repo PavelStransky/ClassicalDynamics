@@ -180,7 +180,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
         sectionCondition = SectionCondition(sectionPlane) 
         callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(RescaleΦ!, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, Section!, nothing, save_positions=(false, true)), DiscreteCallback(TimeoutCondition, terminate!))
     else
-        callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(RescaleΦ!, lyapunovs, saveat=saveStep:saveStep:1e6),  DiscreteCallback(ConvergenceCondition, terminate!), DiscreteCallback(TimeoutCondition, terminate!))
+        callback = CallbackSet(SavingCallback(RescaleΦ!, lyapunovs, saveat=saveStep:saveStep:1e6),  DiscreteCallback(ConvergenceCondition, terminate!), DiscreteCallback(TimeoutCondition, terminate!))
     end
     time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=maximumIterations, isoutofdomain=CheckDomain, verbose=true)
 
