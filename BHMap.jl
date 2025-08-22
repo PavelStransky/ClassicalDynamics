@@ -5,23 +5,28 @@ using Statistics
 using Distributed
 using Printf
 
-workers = 10
+workers = 8
 
 if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
 end
 
-# @everywhere using Logging
-# @everywhere global_logger(ConsoleLogger(stderr, Logging.Warn))
+@everywhere using Logging
+@everywhere global_logger(ConsoleLogger(stderr, Logging.Warn))
 
 @everywhere include("models/BoseHubbardFull.jl")
 @everywhere include("modules/ClassicalDynamics.jl")
 
 # Random.seed!(1234)
 
-function LyapunovMap(parameters, energy; initialConditionTolerance = 0.0001, numTrajectories = 400)
+# Constants and parameters
+TRAJECTORIES = 3000
+U = 1
+L = 4
+
+function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001, numTrajectories=100)
     function SingleTrajectory()
-        initialCondition = InitialCondition(energy, parameters, initialConditionTolerance)
+        initialCondition = InitialCondition(energy, parameters, initialConditionEnergyTolerance)
 
         if initialCondition === nothing
             return -1
@@ -31,7 +36,7 @@ function LyapunovMap(parameters, energy; initialConditionTolerance = 0.0001, num
             sectionPlane=-1, maximumSectionPoints=-1, maximumIterations=1E6)[2]
         
         return lyapunov
-    end
+    end    
 
     input = 1:numTrajectories
     
@@ -39,11 +44,11 @@ function LyapunovMap(parameters, energy; initialConditionTolerance = 0.0001, num
 
     L, J, U = parameters
 
-    result = filter(x -> x > 0, result)
+    nonzero = filter(x -> x > 0, result)
     positive = filter(x -> x > 0.005, result)
 
-    println("J = $J, E = $energy");
-    println("Number of trajectories: $(length(result)) ($(length(positive)) unstable)");
+    println("Finished J = $J, U = $U, E = $energy");
+    println("Number of new trajectories: $(length(result)) ($(length(positive)) unstable)");
 
     if length(positive) > 0
         print("Λ = $(mean(positive))")
@@ -53,8 +58,8 @@ function LyapunovMap(parameters, energy; initialConditionTolerance = 0.0001, num
         println()
     end
     
-    if length(result) > 0
-        println("freg = ", 1 - length(positive) / length(result))
+    if length(nonzero) > 0
+        println("freg = ", 1 - length(positive) / length(nonzero))
     end
 
     println("Elapsed time: $time seconds")
@@ -63,17 +68,23 @@ function LyapunovMap(parameters, energy; initialConditionTolerance = 0.0001, num
     return result, positive
 end
 
-U = 1
-
 for j in LinRange(0.1, 0.1, 1)
     for energy in LinRange(0, 1, 201)
-        lyapunovs, positive = LyapunovMap((4, j, U), energy)
+        file = "d:/results/bh/lyapunov/angel/" * @sprintf("%.3f_%.3f_%.3f", j, U, energy) * ".txt"
+        if isfile(file) 
+            trajectories = countlines(file) 
+        else 
+            trajectories = 0
+        end
+        
+        println("Starting J = $j, U = $U, E = $energy");
+        println("Computed trajectories: $trajectories, trajectories to compute: $(TRAJECTORIES - trajectories)");
+
+        lyapunovs, positive = LyapunovMap((L, j, U), energy, numTrajectories=TRAJECTORIES - trajectories)
 
         if length(lyapunovs) == 0
             continue
         end
-
-        file = "d:/results/bh/lyapunov/angel/" * @sprintf("%.3f_%.3f_%.3f", j, U, energy) * ".txt"
 
         open(file, "a") do io
             for lyapunov in lyapunovs
