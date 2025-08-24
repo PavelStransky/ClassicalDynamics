@@ -44,6 +44,27 @@ function InitialCondition(energy, parameters, error; maxInitialConditions=100000
     return nothing
 end
 
+function InitialCondition0(energy, parameters, error; maxInitialConditions=1000000)
+    L, J, U = parameters
+
+    for i = 1:maxInitialConditions
+        x0 = randn(2)
+        x0 .*= sqrt.(2 / sum(x0 .* x0))
+
+        x = zeros(2 * L)
+        x[1] = x0[1]
+        x[2] = x0[2]
+
+        e = Energy(x, parameters)
+
+        if abs(energy - e) < error
+            @info "Initial condition after $(i) attempts found: $(x)"
+            return x
+        end
+    end
+
+    return nothing
+end
 
 function EquationOfMotion!(dx, x, parameters, t)
     L, J, U = parameters.modelParameters
