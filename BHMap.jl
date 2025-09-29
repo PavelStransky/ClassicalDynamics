@@ -20,7 +20,7 @@ end
 # Random.seed!(1234)
 
 # Constants and parameters
-TRAJECTORIES = 3000
+TRAJECTORIES = 1000
 U = 1
 L = 4
 
@@ -68,7 +68,7 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
     return result, positive
 end
 
-for j in LinRange(0.1, 0.1, 1)
+for j in LinRange(0.2, 0.2, 1)
     for energy in LinRange(0, 1, 201)
         file = "d:/results/bh/lyapunov/angel/" * @sprintf("%.3f_%.3f_%.3f", j, U, energy) * ".txt"
         if isfile(file) 

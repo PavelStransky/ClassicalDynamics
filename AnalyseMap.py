@@ -4,30 +4,40 @@ import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
-PATH = 'd:/results/bhx/3/'
-PATH_SP = 'd:/results/bh/3/'
+PATH = 'd:/results/bhx/4/'
+PATH_SP = 'd:/results/bh/4/'
 
 THRESHOLD_STABLE = 0.0025
 THRESHOLD_METASTABLE_FACTOR = 0.5
 
 U = 1
-Js = np.linspace(-0.5, 0.5, 101)
-energies = U * np.linspace(0, 1, 101)
 
-energies_mean = np.zeros((101, 101))
-lyapunov_mean = np.zeros((101, 101))
-lyapunov_var = np.zeros((101, 101))
+minJ = 0
+maxJ = 0.5
+numJ = 101
 
-freg_stable = np.zeros((101, 101))
-freg = np.zeros((101, 101))
+minE = 0
+maxE = 1
+numE = 201
+
+Js = np.linspace(minJ, maxJ, numJ)
+energies = U * np.linspace(minE, maxE, numE)
+
+energies_mean = np.zeros((numJ, numE))
+lyapunov_mean = np.zeros((numJ, numE))
+lyapunov_var = np.zeros((numJ, numE))
+
+freg_stable = np.zeros((numJ, numE))
+freg = np.zeros((numJ, numE))
 
 for ji, J in enumerate(Js):
     for ei, energy in enumerate(energies):
         try:
-            data = np.loadtxt(f'{PATH}{J:.2f}_{energy:.2f}.txt')
+            data = np.loadtxt(f'{PATH}{J:.3f}_{U:.3f}_{energy:.3f}.txt')
+            # data = np.loadtxt(f'{PATH}{J:.2f}_{energy:.2f}.txt')
 
         except Exception as e:
-            print(f"Error loading {energy:.2f}: {e}")
+            print(f"Error loading {energy:.3f}: {e}")
             continue
 
         data = np.flip(np.sort(data))
@@ -86,8 +96,8 @@ plt.colorbar(label="Lyapunov")
 plt.title("Lyapunov exponent")
 plt.xlabel("J")
 plt.ylabel("E")
-plt.xlim(-0.5, 0.5)
-plt.ylim(0, 1)
+plt.xlim(minJ, maxJ)
+plt.ylim(minE, maxE)
 plt.show()
 
 plt.pcolormesh(Js, energies, np.transpose(lyapunov_var), cmap="viridis", shading="auto")
@@ -96,8 +106,8 @@ plt.colorbar(label="Lyapunov variance")
 plt.title("Lyapunov variance")
 plt.xlabel("J")
 plt.ylabel("E")
-plt.xlim(-0.5, 0.5)
-plt.ylim(0, 1)
+plt.xlim(minJ, maxJ)
+plt.ylim(minE, maxE)
 plt.show()
 
 plt.pcolormesh(Js, energies, np.transpose(freg_stable), cmap="viridis", shading="auto")
@@ -106,6 +116,6 @@ plt.colorbar(label="freg")
 plt.title("Fraction of regularity")
 plt.xlabel("J")
 plt.ylabel("E")
-plt.xlim(-0.5, 0.5)
-plt.ylim(0, 1)
+plt.xlim(minJ, maxJ)
+plt.ylim(minE, maxE)
 plt.show()

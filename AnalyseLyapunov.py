@@ -6,14 +6,14 @@ import matplotlib.pyplot as plt
 
 PATH = 'd:/results/bh/lyapunov/angel/'
 
-THRESHOLD_STABLE = 0.0025
+THRESHOLD_STABLE = 0.002
 THRESHOLD_METASTABLE_FACTOR = 0.5
 
 U = 1
 J = 0.1
 
 # Multiplying factor
-F = 1
+F = -10
 
 # NL maximum Lyapunov exponents
 NL = 5
@@ -27,7 +27,7 @@ lyapunov_var = []
 freg_stable = []
 freg = []
 
-STATIONARY_POINTS = U * np.array([0.05, 0.25, 0.328333333333333, 0.41, 0.45, 0.48241092975590166, 0.5, 0.54, 0.61, 1.0100376908326862])
+STATIONARY_POINTS = U * np.array([0.05, 0.25, 0.328333333333333, 0.41, 0.45, 0.48241092975590166, 0.5, 0.54, 0.61, 1.0100376908326862]) if J == 0.1 else U * np.array([-0.15, 0.25, 0.3133333333333333, 0.34, 0.5, 0.6558756051379748, 0.65, 0.66, 0.73, 1.0406128961757286])
 
 energies = U * np.linspace(0, 1, 201)
 
@@ -128,7 +128,7 @@ ax1.tick_params(axis="y", labelcolor=color)
 color = 'tab:orange'
 ax2 = ax1.twinx()
 # ax2.plot(energies_mean, np.array(freg), marker='o', label='freg all', color=color)
-ax2.plot(F * np.array(energies_mean), np.abs(F) * np.array(freg_stable), marker='s', label='freg', color=color)
+ax2.plot(F * np.array(energies_mean), np.array(freg_stable), marker='s', label='freg', color=color)
 
 for sp in STATIONARY_POINTS:
     ax1.axvline(x=F * sp, color='green', linestyle='--')
@@ -142,3 +142,6 @@ ax2.grid()
 fig.tight_layout()
 
 plt.show()
+
+np.savetxt(f'{PATH}lyapunov_{J:.3f}_{U:.3f}.txt', np.column_stack((F * np.array(energies_mean), np.abs(F) * np.array(lyapunov_mean), np.abs(F) * np.array(lyapunov_var))), delimiter=',')
+np.savetxt(f'{PATH}freg_{J:.3f}_{U:.3f}.txt', np.column_stack((F * np.array(energies_mean), np.array(freg_stable))), delimiter=',')
