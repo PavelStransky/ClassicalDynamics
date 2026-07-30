@@ -4,21 +4,24 @@ import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
-PATH = 'd:/results/bhx/4/'
-PATH_SP = 'd:/results/bh/4/'
+FIGSIZE = (12, 8)
 
 THRESHOLD_STABLE = 0.0025
 THRESHOLD_METASTABLE_FACTOR = 0.5
 
 U = 1
+L = 4
 
-minJ = 0
+minJ = 0.0
 maxJ = 0.5
 numJ = 101
 
 minE = 0
-maxE = 1
-numE = 201
+maxE = 1.5
+numE = 151
+
+PATH = f"c:/results/bhx/{L}/"
+PATH_SP = f"c:/results/bh/{L}/"
 
 Js = np.linspace(minJ, maxJ, numJ)
 energies = U * np.linspace(minE, maxE, numE)
@@ -48,7 +51,7 @@ for ji, J in enumerate(Js):
         threshold_mestastable = THRESHOLD_STABLE
 
         if len(unstable) > 5:
-            for i in range(10):
+            for i in range(4 * (L - 1) + 1):
                 threshold_mestastable = np.std(unstable) * THRESHOLD_METASTABLE_FACTOR + THRESHOLD_STABLE
                 unstable = data[data >= threshold_mestastable]
 
@@ -68,7 +71,7 @@ for ji, J in enumerate(Js):
 
 def PlotESQPTs():
     for type in ['hsaddle', 'hstable', 'hunstable']:
-        for i in range(9):
+        for i in range(13):
             fname = f'{PATH_SP}{type}_{i}.txt'
 
             data = []
@@ -90,6 +93,7 @@ def PlotESQPTs():
             plt.scatter(data[:, 0], data[:, 1], color='white', s=5)
 
 
+plt.figure(figsize=FIGSIZE)
 plt.pcolormesh(Js, energies, np.transpose(lyapunov_mean), cmap="viridis", shading="auto")
 PlotESQPTs()
 plt.colorbar(label="Lyapunov")
@@ -98,8 +102,11 @@ plt.xlabel("J")
 plt.ylabel("E")
 plt.xlim(minJ, maxJ)
 plt.ylim(minE, maxE)
+plt.savefig(f'{PATH}lyapunov_mean.png')
+plt.savefig(f'{PATH}lyapunov_mean.pdf')
 plt.show()
 
+plt.figure(figsize=FIGSIZE)
 plt.pcolormesh(Js, energies, np.transpose(lyapunov_var), cmap="viridis", shading="auto")
 PlotESQPTs()
 plt.colorbar(label="Lyapunov variance")
@@ -108,8 +115,11 @@ plt.xlabel("J")
 plt.ylabel("E")
 plt.xlim(minJ, maxJ)
 plt.ylim(minE, maxE)
+plt.savefig(f'{PATH}lyapunov_var.png')
+plt.savefig(f'{PATH}lyapunov_var.pdf')
 plt.show()
 
+plt.figure(figsize=FIGSIZE)
 plt.pcolormesh(Js, energies, np.transpose(freg_stable), cmap="viridis", shading="auto")
 PlotESQPTs()
 plt.colorbar(label="freg")
@@ -118,4 +128,6 @@ plt.xlabel("J")
 plt.ylabel("E")
 plt.xlim(minJ, maxJ)
 plt.ylim(minE, maxE)
+plt.savefig(f'{PATH}freg_stable.png')
+plt.savefig(f'{PATH}freg_stable.pdf')
 plt.show()
