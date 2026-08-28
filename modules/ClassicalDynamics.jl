@@ -24,8 +24,10 @@ mutable struct LyapunovIntegrationParameters{P}
     startTime::UInt64                    # System time in ns (to determine the duration of the calculation)
     timeout::Float64                     # Calculation is interrupted if the duration of the calculation exceeds this number
     result::Symbol                       # Flag indicating whether the calculation was successful, whether it was interrupted for some reason or whether it finishes with an error
-    lyapunovExponent::Float64            # Last Lyapunov exponent
-    historyLyapunovExponent::Vector{Float64}  # Array of the last Lypunov exponents values; its mean is then taken as the calculated Lyapunov exponent value
+    lyapunovExponent::Float64            # Running sum  Σ log(growth factor)  (accumulated after relaxationTime)
+    norm0::Float64                       # Target of the second conserved quantity (Σ x^2 / 2) for ManifoldProjection; 0 disables it
+    historyLength::Int                   # Number of trailing running-exponent samples used for the convergence test / final average
+    historyLyapunovExponent::Vector{Float64}  # Running-exponent samples, one per rescale, appended after relaxationTime (starts empty)
 end
 
 # Convenience outer constructor: infers P from modelParameters and converts the remaining
@@ -42,62 +44,85 @@ end
 SimpleIntegrationParameters(modelParameters, energy) =
     SimpleIntegrationParameters{typeof(modelParameters)}(modelParameters, energy)
 
-""" 
-    Rescales the Φ matrix and saves the Lyapunov exponent
-    Called periodically (every "saveStep" time units) - SavingCallback
 """
-function RescaleΦ!(u, t, integrator)
-    integrationParameters = integrator.p
-    dimension = integrationParameters.dimension
+    Largest-Lyapunov-exponent convergence test: the exponent has plateaued when, over the last
+    `historyLength` running-exponent samples, the variance/mean ratio drops below
+    `relativeFluctuationThreshold` (chaotic) or the mean drops below `regularThreshold` (regular).
+    Returns false until at least `historyLength` post-relaxation samples have been collected, so the
+    decision is never taken on a half-filled buffer (the history now starts empty, not random).
+"""
+function Converged(integrationParameters)
+    history = integrationParameters.historyLyapunovExponent
+    n = length(history)
+    n >= integrationParameters.historyLength || return false
 
-    Φ = reshape(integrator.u[(dimension + 1):end], dimension, dimension)
-    
-    maxEigenvalue = sqrt(maximum(eigvals(Φ * transpose(Φ))))
-    integrator.u[(dimension + 1):end] /= maxEigenvalue
+    window = @view history[(n - integrationParameters.historyLength + 1):n]
+    mean_ = mean(window)
+    mean_ > 0 || return false
 
-    lyapunov = 0
-
-    relaxationTime = integrationParameters.relaxationTime
-    if t > relaxationTime
-        integrationParameters.lyapunovExponent += log(maxEigenvalue)
-        lyapunov = integrationParameters.lyapunovExponent / (t - relaxationTime)
-
-        lyapunovs = integrationParameters.historyLyapunovExponent[2:end]
-        append!(lyapunovs, lyapunov)
-        integrationParameters.historyLyapunovExponent = lyapunovs
-    end
-
-    return lyapunov
+    return (var(window) / mean_ < integrationParameters.relativeFluctuationThreshold) ||
+           (mean_ < integrationParameters.regularThreshold)
 end
 
 """
-    Single-deviation-vector (Benettin) variant of RescaleΦ!, used when TrajectoryLyapunov
-    runs with tangentDynamics = :vector. Renormalises the one deviation vector stored in
-    u[(dimension + 1):end] and accumulates log of its growth factor. Only the largest
-    Lyapunov exponent is obtained this way, but at a fraction of the cost (no eigen-decomposition,
-    dimension instead of dimension^2 tangent components).
+    Common tail of the rescale callbacks: accumulate log(growth), append the running exponent to the
+    history and, in the no-section mode, stop the integration once it has converged.
 """
-function RescaleDeviationVector!(u, t, integrator)
+function AccumulateLyapunov!(integrator, growth)
     integrationParameters = integrator.p
-    dimension = integrationParameters.dimension
+    t = integrator.t
 
-    deviation = @view integrator.u[(dimension + 1):end]
+    t > integrationParameters.relaxationTime || return
+
+    integrationParameters.lyapunovExponent += log(growth)
+    push!(integrationParameters.historyLyapunovExponent,
+          integrationParameters.lyapunovExponent / (t - integrationParameters.relaxationTime))
+
+    # With a Poincaré section the stopping decision is taken in Section! instead.
+    if integrationParameters.maximumSectionPoints <= 0 && Converged(integrationParameters)
+        integrationParameters.result = :Converged
+        terminate!(integrator)
+    end
+end
+
+"""
+    Rescales the Φ matrix (full stability-matrix tangent dynamics) and accumulates the exponent.
+    PeriodicCallback affect (every `saveStep` time units); calls u_modified! so adaptive/FSAL
+    solvers refresh their cached derivative after the renormalisation.
+"""
+function RescaleΦ!(integrator)
+    dimension = integrator.p.dimension
+    tail = view(integrator.u, (dimension + 1):(dimension + dimension * dimension))
+
+    Φ = reshape(tail, dimension, dimension)
+    growth = sqrt(maximum(eigvals(Φ * transpose(Φ))))
+    tail ./= growth
+    u_modified!(integrator, true)
+
+    AccumulateLyapunov!(integrator, growth)
+end
+
+"""
+    Single-deviation-vector (Benettin) rescale, used when tangentDynamics = :vector. Renormalises the
+    one deviation vector in u[(dimension + 1):end]; no eigen-decomposition, `dimension` tangent
+    components instead of `dimension^2`. Largest exponent only.
+"""
+function RescaleDeviationVector!(integrator)
+    dimension = integrator.p.dimension
+    deviation = view(integrator.u, (dimension + 1):(2 * dimension))
+
     growth = sqrt(sum(abs2, deviation))
     deviation ./= growth
+    u_modified!(integrator, true)
 
-    lyapunov = 0
+    AccumulateLyapunov!(integrator, growth)
+end
 
-    relaxationTime = integrationParameters.relaxationTime
-    if t > relaxationTime
-        integrationParameters.lyapunovExponent += log(growth)
-        lyapunov = integrationParameters.lyapunovExponent / (t - relaxationTime)
-
-        lyapunovs = integrationParameters.historyLyapunovExponent[2:end]
-        append!(lyapunovs, lyapunov)
-        integrationParameters.historyLyapunovExponent = lyapunovs
-    end
-
-    return lyapunov
+""" Non-mutating reader for the SavingCallback that records the running exponent for plotting. """
+function RunningLyapunov(u, t, integrator)
+    integrationParameters = integrator.p
+    return t > integrationParameters.relaxationTime ?
+        integrationParameters.lyapunovExponent / (t - integrationParameters.relaxationTime) : 0.0
 end
 
 
@@ -129,32 +154,14 @@ function Section!(integrator)
         return terminate!(integrator)
     end
 
-    lyapunovs = integrationParameters.historyLyapunovExponent
-    lv = var(lyapunovs)
-    lm = mean(lyapunovs)
-
-    if (lm > 0) && ((lv / lm < integrationParameters.relativeFluctuationThreshold) || (lm < integrationParameters.regularThreshold))
+    if Converged(integrationParameters)
         integrationParameters.result = :Converged
         return terminate!(integrator)
     end
 end
 
-function ConvergenceCondition(u, t, integrator)
-    integrationParameters = integrator.p
 
-    lyapunovs = integrationParameters.historyLyapunovExponent
-    lv = var(lyapunovs)
-    lm = mean(lyapunovs)
-
-    if (lm > 0) && ((lv / lm < integrationParameters.relativeFluctuationThreshold) || (lm < integrationParameters.regularThreshold))
-        integrationParameters.result = :Converged
-        return true
-    end
-    return false
-end
-
-
-""" Energy conservation - ManifoldProjection """
+""" Energy conservation only - ManifoldProjection residual (default; used by every model). """
 function EnergyConservation!(resid, u, integrationParameters, t)
     resid[1] = Energy(u, integrationParameters.modelParameters) - integrationParameters.energy
     resid[2:end] .= 0
@@ -181,24 +188,27 @@ end
               All points of the Poincaré section (through the sectionPlane) of the calculated trajectory,
               Time evolution of the Lyapunov exponent
 """
-function TrajectoryLyapunov(initialCondition, parameters; 
-        solver=TsitPap8(), 
-        sectionPlane=3, 
-        savePath=nothing, 
-        showFigures=false, 
+function TrajectoryLyapunov(initialCondition, parameters;
+        solver=DP8(),                       # efficient 8th-order explicit RK; needs fewer RHS evals than TsitPap8 at tol 1e-8..1e-10
+        sectionPlane=3,
+        savePath=nothing,
+        showFigures=false,
         timeout=0,
-        maximumIterations=2E6, 
-        relaxationTime=100, 
-        regularThreshold=1e-3, 
-        relativeFluctuationThreshold=1e-5, 
-        maximumSectionPoints=20000, 
-        tolerance=1e-10, 
+        maximumIterations=2E6,
+        relaxationTime=100,
+        regularThreshold=1e-3,
+        relativeFluctuationThreshold=1e-5,
+        maximumSectionPoints=20000,
+        tolerance=1e-8,                      # below ~1e-8 the exponent is limited by finite-time/shadowing scatter, not integrator error
         saveStep=2,                         # How often calculate the Lyapunov exponent and rescale the stability matrix
         historyLyapunovExponentLength=500,
         timeInterval = (0, 1e5),
-        tangentDynamics = :matrix           # :matrix -> full 2f x 2f stability matrix + eigvals (whole Lyapunov spectrum available)
+        tangentDynamics = :matrix,          # :matrix -> full 2f x 2f stability matrix + eigvals (whole Lyapunov spectrum available)
                                             # :vector -> single deviation vector, matrix-free J*v, norm rescaling (largest exponent only, much faster)
                                             #            Requires the model to provide EquationOfMotionTangentVector! (currently: BoseHubbardFull).
+        manifoldProjection = nothing        # nothing -> project energy only, and only in the section branch (previous behaviour).
+                                            # a residual function g!(resid, u, p, t) -> project it (energy + extra invariants) in BOTH branches,
+                                            # pinning the trajectory to its (E, ...) shell and removing secular drift.
     )
 
     phaseSpaceDimension = length(initialCondition)
@@ -225,8 +235,11 @@ function TrajectoryLyapunov(initialCondition, parameters;
     end
 
     energy = Energy(x0, parameters)
+    norm0 = 0.5 * sum(abs2, @view x0[1:phaseSpaceDimension])   # second conserved quantity, for the optional projection
 
-    integrationParameters = LyapunovIntegrationParameters(phaseSpaceDimension, parameters, energy, relaxationTime, relativeFluctuationThreshold, regularThreshold, maximumSectionPoints, 0, time_ns(), 1E9 * timeout, :Start, 1, rand(historyLyapunovExponentLength))
+    integrationParameters = LyapunovIntegrationParameters(phaseSpaceDimension, parameters, energy, relaxationTime,
+        relativeFluctuationThreshold, regularThreshold, maximumSectionPoints, 0, time_ns(), 1E9 * timeout, :Start,
+        0.0, norm0, historyLyapunovExponentLength, Float64[])
 
     lyapunovs = SavedValues(Float64, Float64)               # The whole history of the immediate Lyapunov exponents (for a graph)
 
@@ -234,17 +247,36 @@ function TrajectoryLyapunov(initialCondition, parameters;
     fnc = ODEFunction(equationOfMotion)
     problem = ODEProblem(fnc, x0, timeInterval, integrationParameters)
 
+    # Rescaling / exponent accumulation: a PeriodicCallback (mutates u, calls u_modified!) rather than a
+    # SavingCallback, so lazy/FSAL solvers stay consistent after every renormalisation.
+    rescale = PeriodicCallback(rescaleCallback, float(saveStep); save_positions=(false, false))
+    record = SavingCallback(RunningLyapunov, lyapunovs, saveat=saveStep:saveStep:last(timeInterval))
+
+    projection = nothing
+    if !isnothing(manifoldProjection)
+        projection = ManifoldProjection(manifoldProjection; save=false,
+            autodiff=AutoForwardDiff(), resid_prototype=zeros(length(x0)))
+    end
+
     if sectionPlane > 0
         sectionCondition = SectionCondition(sectionPlane)
-        callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(rescaleCallback, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, Section!, nothing, save_positions=(false, true)), DiscreteCallback(TimeoutCondition, terminate!))
+        section = ContinuousCallback(sectionCondition, Section!, nothing, save_positions=(false, true))
+        energyProjection = isnothing(projection) ?
+            ManifoldProjection(EnergyConservation!; save=false, autodiff=AutoForwardDiff(), resid_prototype=zeros(length(x0))) :
+            projection
+        callback = CallbackSet(energyProjection, rescale, record, section, DiscreteCallback(TimeoutCondition, terminate!))
+    elseif isnothing(projection)
+        callback = CallbackSet(rescale, record, DiscreteCallback(TimeoutCondition, terminate!))
     else
-        callback = CallbackSet(SavingCallback(rescaleCallback, lyapunovs, saveat=saveStep:saveStep:1e6),  DiscreteCallback(ConvergenceCondition, terminate!), DiscreteCallback(TimeoutCondition, terminate!))
+        callback = CallbackSet(projection, rescale, record, DiscreteCallback(TimeoutCondition, terminate!))
     end
     time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=maximumIterations, isoutofdomain=CheckDomain, verbose=true)
 
-    # Get results
-    lyapunov = mean(integrationParameters.historyLyapunovExponent)
-    lv = var(integrationParameters.historyLyapunovExponent)
+    # Get results - average over the trailing window of running-exponent samples (empty -> exactly 0)
+    history = integrationParameters.historyLyapunovExponent
+    window = @view history[max(1, length(history) - historyLyapunovExponentLength + 1):end]
+    lyapunov = isempty(window) ? 0.0 : mean(window)
+    lv = length(window) > 1 ? var(window) : 0.0
 
     # Print result
     if length(solution) > 0
@@ -662,14 +694,14 @@ function TestTrajectory(x, parameters; sectionPlane=3)
         x0[1:phaseSpaceDimension] = initialCondition
         x0[(phaseSpaceDimension + 1):end] = Matrix{Float64}(I, phaseSpaceDimension, phaseSpaceDimension)
 
-        integrationParameters = LyapunovIntegrationParameters(phaseSpaceDimension, parameters, energy, 0, 1E-5, 0.001, 10000, 0, time_ns(), 0, :Start, 1, rand(200))
+        integrationParameters = LyapunovIntegrationParameters(phaseSpaceDimension, parameters, energy, 0, 1E-5, 0.001, 10000, 0, time_ns(), 0, :Start, 0.0, 0.0, 200, Float64[])
 
         fnc = ODEFunction(EquationOfMotion!)
         problem = ODEProblem(fnc, x0, (0, 1e6), integrationParameters)
 
         lyapunovs = SavedValues(Float64, Float64)                                              # For a graph of Lyapunov exponents
 
-        callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(RescaleΦ!, lyapunovs, saveat=2:2:1e6), DiscreteCallback(TimeoutCondition, terminate!))
+        callback = CallbackSet(ManifoldProjection(EnergyConservation!; save=false, autodiff=AutoForwardDiff(), resid_prototype=zeros(length(x0))), PeriodicCallback(RescaleΦ!, 2.0; save_positions=(false, false)), SavingCallback(RunningLyapunov, lyapunovs, saveat=2:2:1e6), DiscreteCallback(TimeoutCondition, terminate!))
         time = @elapsed solution = solve(problem, method, reltol=1e-8, abstol=1e-8, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=1E8, isoutofdomain=CheckDomain, verbose=true)    
 
         lyapunov = mean(integrationParameters.historyLyapunovExponent)

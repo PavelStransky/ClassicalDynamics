@@ -26,6 +26,21 @@ function CheckDomain(x, parameters, t)
     return false
 end
 
+"""
+    ManifoldProjection residual for the Bose-Hubbard model: pins BOTH conserved quantities,
+    the energy and the total boson number  N = Σ (p_i^2 + q_i^2) / 2  (= 1 with the Σ x^2 = 2
+    normalisation used in InitialCondition; passed in as integrationParameters.norm0).
+    Pass as  TrajectoryLyapunov(...; manifoldProjection = BoseHubbardConservation!).
+"""
+function BoseHubbardConservation!(resid, u, integrationParameters, t)
+    dimension = integrationParameters.dimension
+    resid[1] = Energy(u, integrationParameters.modelParameters) - integrationParameters.energy
+    resid[2] = 0.5 * sum(abs2, @view u[1:dimension]) - integrationParameters.norm0
+    @inbounds for i in 3:length(resid)
+        resid[i] = 0.0
+    end
+end
+
 function InitialCondition(energy, parameters, error; maxInitialConditions=1000000)
     L, J, U = parameters
 
