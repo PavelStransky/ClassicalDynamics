@@ -9,28 +9,38 @@ using ColorSchemes
 
 pyplot(size = (1200,1000))
 
-""" Parameters for the Lyapunov exponent calculation """
-mutable struct LyapunovIntegrationParameters
-    dimension                       # Dimension of the phase space of the problem
-    modelParameters                 
-    energy
-    relaxationTime                  # Minumum time for the Lyapunov exponent evaluation
-    relativeFluctuationThreshold    # Calculation is finished when the variance over mean of the array historyLyapunovExponent is smaller than this value -> Chaotic trajectory
-    regularThreshold                # Calculation is finished when the mean of the array historyLyapunovExponent is smaller than this value -> Regular trajectory
-    maximumSectionPoints            # Calculation is interrupted when the number of points in the Poincaré section exceeds this value
-    sectionPoints                   # Current number of points in the Poincaré section
-    startTime                       # System time in ns (to determine the duration of the calculation)
-    timeout                         # Calculation is interrupted if the duration of the calculation exceeds this number
-    result                          # Flag indicating whether the calculation was successful, whether it was interrupted for some reason or whether it finishes with an error
-    lyapunovExponent                # Last Lyapunov exponent
-    historyLyapunovExponent         # Array of the last Lypunov exponents values; its mean is then taken as the calculated Lyapunov exponent value
-end    
+""" Parameters for the Lyapunov exponent calculation.
+    Parametrised on P = typeof(modelParameters) so every field is concretely typed;
+    this makes EquationOfMotion! and the callbacks type-stable (huge speed-up). """
+mutable struct LyapunovIntegrationParameters{P}
+    dimension::Int                       # Dimension of the phase space of the problem
+    modelParameters::P
+    energy::Float64
+    relaxationTime::Float64              # Minumum time for the Lyapunov exponent evaluation
+    relativeFluctuationThreshold::Float64    # Calculation is finished when the variance over mean of the array historyLyapunovExponent is smaller than this value -> Chaotic trajectory
+    regularThreshold::Float64            # Calculation is finished when the mean of the array historyLyapunovExponent is smaller than this value -> Regular trajectory
+    maximumSectionPoints::Int            # Calculation is interrupted when the number of points in the Poincaré section exceeds this value
+    sectionPoints::Int                   # Current number of points in the Poincaré section
+    startTime::UInt64                    # System time in ns (to determine the duration of the calculation)
+    timeout::Float64                     # Calculation is interrupted if the duration of the calculation exceeds this number
+    result::Symbol                       # Flag indicating whether the calculation was successful, whether it was interrupted for some reason or whether it finishes with an error
+    lyapunovExponent::Float64            # Last Lyapunov exponent
+    historyLyapunovExponent::Vector{Float64}  # Array of the last Lypunov exponents values; its mean is then taken as the calculated Lyapunov exponent value
+end
+
+# Convenience outer constructor: infers P from modelParameters and converts the remaining
+# arguments to the concrete field types (so Int literals like 100 / 0 / 1 are still accepted).
+LyapunovIntegrationParameters(dimension, modelParameters, args...) =
+    LyapunovIntegrationParameters{typeof(modelParameters)}(dimension, modelParameters, args...)
 
 """ Parameters for the calculation without Lyapunov exponents """
-struct SimpleIntegrationParameters
-    modelParameters
-    energy
+struct SimpleIntegrationParameters{P}
+    modelParameters::P
+    energy::Float64
 end
+
+SimpleIntegrationParameters(modelParameters, energy) =
+    SimpleIntegrationParameters{typeof(modelParameters)}(modelParameters, energy)
 
 """ 
     Rescales the Φ matrix and saves the Lyapunov exponent

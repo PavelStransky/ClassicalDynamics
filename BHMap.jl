@@ -20,9 +20,9 @@ end
 # Random.seed!(1234)
 
 # Constants and parameters
-TRAJECTORIES = 240
-U = 1
-L = 5
+const TRAJECTORIES = 240
+const U = 1.0            # Float64 so modelParameters is a concrete NTuple -> type-stable EquationOfMotion!
+const L = 5
 
 function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001, numTrajectories=100)
     function SingleTrajectory()
