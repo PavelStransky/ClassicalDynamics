@@ -24,7 +24,13 @@ const TRAJECTORIES = 240
 const U = 1.0            # Float64 so modelParameters is a concrete NTuple -> type-stable EquationOfMotion!
 const L = 5
 
-function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001, numTrajectories=100)
+# Tangent-dynamics method for the Lyapunov exponent:
+#   :vector -> single deviation vector, matrix-free J*v (fast; largest exponent only) -- default here
+#   :matrix -> full 2f x 2f stability matrix + eigvals (slower; reproduces the original estimator exactly)
+const TANGENT_DYNAMICS = :vector
+
+function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001, numTrajectories=100, tangentDynamics=TANGENT_DYNAMICS)
+    # tangentDynamics is captured as a closure local (not a global) so it is serialised to the pmap workers
     function SingleTrajectory()
         initialCondition = InitialCondition(energy, parameters, initialConditionEnergyTolerance)
 
@@ -32,11 +38,11 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
             return -1
         end
 
-        lyapunov = TrajectoryLyapunov(initialCondition, parameters; 
-            sectionPlane=-1, maximumSectionPoints=-1, maximumIterations=1E6)[2]
-        
+        lyapunov = TrajectoryLyapunov(initialCondition, parameters;
+            sectionPlane=-1, maximumSectionPoints=-1, maximumIterations=1E6, tangentDynamics=tangentDynamics)[2]
+
         return lyapunov
-    end    
+    end
 
     input = 1:numTrajectories
     

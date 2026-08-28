@@ -111,3 +111,48 @@ function EquationOfMotion!(dx, x, parameters, t)
     # j = zeros(Float64, 2 * L, 2 * L)
     dx[(2 * L + 1):end] = j * Φ
 end
+
+"""
+    Equations of motion with a SINGLE deviation vector for the tangent dynamics
+    (Benettin method, largest Lyapunov exponent only). Used by TrajectoryLyapunov(...; tangentDynamics = :vector).
+
+    State layout: x[1:2L] = phase-space point (p, q),  x[2L+1:4L] = deviation vector (δp, δq).
+    The tangent part is the analytic Jacobian-vector product Df(x)·v, evaluated matrix-free
+    (no 2L x 2L matrix is ever formed). It is algebraically identical to one column of j * Φ
+    from EquationOfMotion! above.
+"""
+function EquationOfMotionTangentVector!(dx, x, parameters, t)
+    L, J, U = parameters.modelParameters
+    D = 2 * L
+
+    @inbounds for i = 1:L
+        p = x[i]
+        q = x[i + L]
+        a = U * (p * p + q * q)
+
+        qm1 = i == 1 ? x[D] : x[i + L - 1]
+        qp1 = i == L ? x[L + 1] : x[i + L + 1]
+        dx[i] = J * (qm1 + qp1) - a * q
+
+        pm1 = i == 1 ? x[L] : x[i - 1]
+        pp1 = i == L ? x[1] : x[i + 1]
+        dx[i + L] = -J * (pm1 + pp1) + a * p
+    end
+
+    # Tangent dynamics: dv = Df(x) · v  with  v = x[D+1 : 2D]
+    @inbounds for i = 1:L
+        p = x[i]
+        q = x[i + L]
+
+        im1 = i == 1 ? L : i - 1
+        ip1 = i == L ? 1 : i + 1
+
+        vp = x[D + i]
+        vq = x[D + i + L]
+
+        dx[D + i]     = -2 * U * p * q * vp - U * (p * p + 3 * q * q) * vq + J * (x[D + im1 + L] + x[D + ip1 + L])
+        dx[D + i + L] = U * (3 * p * p + q * q) * vp + 2 * U * p * q * vq - J * (x[D + im1] + x[D + ip1])
+    end
+
+    return nothing
+end

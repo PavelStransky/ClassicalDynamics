@@ -70,6 +70,36 @@ function RescaleΦ!(u, t, integrator)
     return lyapunov
 end
 
+"""
+    Single-deviation-vector (Benettin) variant of RescaleΦ!, used when TrajectoryLyapunov
+    runs with tangentDynamics = :vector. Renormalises the one deviation vector stored in
+    u[(dimension + 1):end] and accumulates log of its growth factor. Only the largest
+    Lyapunov exponent is obtained this way, but at a fraction of the cost (no eigen-decomposition,
+    dimension instead of dimension^2 tangent components).
+"""
+function RescaleDeviationVector!(u, t, integrator)
+    integrationParameters = integrator.p
+    dimension = integrationParameters.dimension
+
+    deviation = @view integrator.u[(dimension + 1):end]
+    growth = sqrt(sum(abs2, deviation))
+    deviation ./= growth
+
+    lyapunov = 0
+
+    relaxationTime = integrationParameters.relaxationTime
+    if t > relaxationTime
+        integrationParameters.lyapunovExponent += log(growth)
+        lyapunov = integrationParameters.lyapunovExponent / (t - relaxationTime)
+
+        lyapunovs = integrationParameters.historyLyapunovExponent[2:end]
+        append!(lyapunovs, lyapunov)
+        integrationParameters.historyLyapunovExponent = lyapunovs
+    end
+
+    return lyapunov
+end
+
 
 """ Check whether the duration of the calculation doesn't exceed a given number - DiscreteCallback """
 function TimeoutCondition(u, t, integrator)
@@ -165,16 +195,34 @@ function TrajectoryLyapunov(initialCondition, parameters;
         tolerance=1e-10, 
         saveStep=2,                         # How often calculate the Lyapunov exponent and rescale the stability matrix
         historyLyapunovExponentLength=500,
-        timeInterval = (0, 1e5)
+        timeInterval = (0, 1e5),
+        tangentDynamics = :matrix           # :matrix -> full 2f x 2f stability matrix + eigvals (whole Lyapunov spectrum available)
+                                            # :vector -> single deviation vector, matrix-free J*v, norm rescaling (largest exponent only, much faster)
+                                            #            Requires the model to provide EquationOfMotionTangentVector! (currently: BoseHubbardFull).
     )
 
     phaseSpaceDimension = length(initialCondition)
 
-    # Initial condition, including the matrix of the tangent dynamics
-    x0 = zeros(phaseSpaceDimension * (phaseSpaceDimension + 1))
-    x0[1:phaseSpaceDimension] = initialCondition
-    x0[(phaseSpaceDimension + 1):end] = Matrix{Float64}(I, phaseSpaceDimension, phaseSpaceDimension)
-    x0[(phaseSpaceDimension + 1):end] = rand(phaseSpaceDimension, phaseSpaceDimension)
+    if tangentDynamics === :vector
+        # Initial condition + a single normalised deviation vector (Benettin method for the largest exponent)
+        equationOfMotion = EquationOfMotionTangentVector!
+        rescaleCallback = RescaleDeviationVector!
+
+        x0 = zeros(2 * phaseSpaceDimension)
+        x0[1:phaseSpaceDimension] = initialCondition
+        deviation = @view x0[(phaseSpaceDimension + 1):end]
+        deviation .= rand(phaseSpaceDimension)
+        deviation ./= sqrt(sum(abs2, deviation))
+    else
+        # Initial condition, including the full matrix of the tangent dynamics
+        equationOfMotion = EquationOfMotion!
+        rescaleCallback = RescaleΦ!
+
+        x0 = zeros(phaseSpaceDimension * (phaseSpaceDimension + 1))
+        x0[1:phaseSpaceDimension] = initialCondition
+        x0[(phaseSpaceDimension + 1):end] = Matrix{Float64}(I, phaseSpaceDimension, phaseSpaceDimension)
+        x0[(phaseSpaceDimension + 1):end] = rand(phaseSpaceDimension, phaseSpaceDimension)
+    end
 
     energy = Energy(x0, parameters)
 
@@ -183,14 +231,14 @@ function TrajectoryLyapunov(initialCondition, parameters;
     lyapunovs = SavedValues(Float64, Float64)               # The whole history of the immediate Lyapunov exponents (for a graph)
 
     # Main part - calling the ODE solver
-    fnc = ODEFunction(EquationOfMotion!)
+    fnc = ODEFunction(equationOfMotion)
     problem = ODEProblem(fnc, x0, timeInterval, integrationParameters)
 
     if sectionPlane > 0
-        sectionCondition = SectionCondition(sectionPlane) 
-        callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(RescaleΦ!, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, Section!, nothing, save_positions=(false, true)), DiscreteCallback(TimeoutCondition, terminate!))
+        sectionCondition = SectionCondition(sectionPlane)
+        callback = CallbackSet(ManifoldProjection(EnergyConservation!, save=false), SavingCallback(rescaleCallback, lyapunovs, saveat=saveStep:saveStep:1e6), ContinuousCallback(sectionCondition, Section!, nothing, save_positions=(false, true)), DiscreteCallback(TimeoutCondition, terminate!))
     else
-        callback = CallbackSet(SavingCallback(RescaleΦ!, lyapunovs, saveat=saveStep:saveStep:1e6),  DiscreteCallback(ConvergenceCondition, terminate!), DiscreteCallback(TimeoutCondition, terminate!))
+        callback = CallbackSet(SavingCallback(rescaleCallback, lyapunovs, saveat=saveStep:saveStep:1e6),  DiscreteCallback(ConvergenceCondition, terminate!), DiscreteCallback(TimeoutCondition, terminate!))
     end
     time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=maximumIterations, isoutofdomain=CheckDomain, verbose=true)
 
