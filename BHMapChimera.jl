@@ -16,7 +16,10 @@ using Printf
 # without it (e.g. running by hand), it falls back to the full sweep, same
 # as BHMap.jl. ARRAY_OFFSET shifts the index, so the sweep can be split
 # across several sbatch submissions if the grid is larger than SLURM's
-# MaxArraySize (see BHMapChimera.sh).
+# MaxArraySize (see BHMapChimera.sh). This script never plots, so it skips
+# loading Plots/ColorSchemes/PyPlot entirely -- see the CD_NO_PLOTS note in
+# modules/ClassicalDynamics.jl.
+ENV["CD_NO_PLOTS"] = "true"
 
 include("models/BoseHubbardFull.jl")
 include("modules/ClassicalDynamics.jl")

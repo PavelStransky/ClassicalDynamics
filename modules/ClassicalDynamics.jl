@@ -2,12 +2,21 @@ using DifferentialEquations, DiffEqCallbacks
 using LinearAlgebra
 using Random
 using Statistics
-using Plots
 using Printf
 using Logging
-using ColorSchemes
 
-pyplot(size = (1200,1000))
+# Plots/ColorSchemes (and the PyPlot backend they pull in) are only needed by the
+# showFigures / savePath paths below. Set CD_NO_PLOTS=true before including this file
+# to skip loading and precompiling them entirely -- e.g. on a headless cluster node
+# where nothing ever plots. Default is unchanged (Plots loaded) for interactive use.
+const CD_LOAD_PLOTS = get(ENV, "CD_NO_PLOTS", "false") != "true"
+
+if CD_LOAD_PLOTS
+    using Plots
+    using ColorSchemes
+
+    pyplot(size = (1200,1000))
+end
 
 """ Parameters for the Lyapunov exponent calculation.
     Parametrised on P = typeof(modelParameters) so every field is concretely typed;
