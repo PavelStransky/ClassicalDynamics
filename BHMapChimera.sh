@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=2G
+#SBATCH --mem-per-cpu=2G               # generous margin for DifferentialEquations/Plots precompilation; see note below
 #SBATCH --array=0-650                  # one task per (J, E) pair: 21 J values x 31 E values
 #SBATCH --output=/home/%u/results/bh/lyapunov/5/logs/bhmap_%a.out
 #SBATCH --error=/home/%u/results/bh/lyapunov/5/logs/bhmap_%a.err
@@ -42,6 +42,17 @@
 # The log directory must exist before the *first* submission (SLURM opens
 # --output/--error when the job starts, before the mkdir -p below runs), so
 # create it once by hand: mkdir -p "$HOME/results/bh/lyapunov/5/logs"
+#
+# IMPORTANT -- precompile once before your first sbatch: with hundreds of
+# array tasks starting close together, each one that finds no compiled
+# cache tries to precompile DifferentialEquations/Plots/etc. itself; they
+# race on the same lock files under ~/.julia/compiled ("stale pidfile"
+# warnings) and can each briefly need well over 1G just to compile, which is
+# what caused the OOM kill. Avoid the race (and most of the memory spike) by
+# precompiling serially first, from the repo root:
+#   salloc -n1 --mem=4G -p ffa-preempt
+#   srun julia BHMapChimera.jl   # Ctrl-C once it starts computing trajectories
+# After that the array tasks reuse the warm cache instead of rebuilding it.
 #
 # Adjust --partition/--time/--array/--mem-per-cpu to taste; see Chimera.md
 # for the full partition table. If Julia is managed via a module on your
