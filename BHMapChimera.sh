@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=bhmap
+#SBATCH --job-name=bhmap4
 #SBATCH --partition=ffa-preempt        # preemptible partition; job resumes cleanly (see note below)
-#SBATCH --time=06:00:00                # generous single-CPU budget for one (J, E) pair; tune after a test run
+#SBATCH --time=01:00:00                # generous single-CPU budget for one (J, E) pair; tune after a test run
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=1G               # generous margin for DifferentialEquations/Plots precompilation; see note below
 #SBATCH --array=0-60500%300            # one task per (J, E) pair: 201 J values x 301 E values
-#SBATCH --output=/home/%u/results/bh/lyapunov/5/logs/bhmap_%a.out
-#SBATCH --error=/home/%u/results/bh/lyapunov/5/logs/bhmap_%a.err
+#SBATCH --output=/home/%u/results/bh/lyapunov/4/logs/bhmap_%a.out
+#SBATCH --error=/home/%u/results/bh/lyapunov/4/logs/bhmap_%a.err
 # #SBATCH --mail-user=you@example.com  # uncomment and fill in to get end/fail notifications
 # #SBATCH --mail-type=END,FAIL
 
@@ -35,13 +35,13 @@
 #       sbatch --array=0-$(( last - offset ))%300 --export=ALL,ARRAY_OFFSET=$offset BHMapChimera.sh
 #   done
 #
-# Results and logs go under $HOME/results/bh/lyapunov/5/ (on Chimera, home is
+# Results and logs go under $HOME/results/bh/lyapunov/4/ (on Chimera, home is
 # always /home/<login>). #SBATCH directives are parsed by sbatch itself, not
 # a shell, so $HOME can't be used there directly -- %u (SLURM's own filename
 # pattern for the submitting user) is used instead and expands the same way.
 # The log directory must exist before the *first* submission (SLURM opens
 # --output/--error when the job starts, before the mkdir -p below runs), so
-# create it once by hand: mkdir -p "$HOME/results/bh/lyapunov/5/logs"
+# create it once by hand: mkdir -p "$HOME/results/bh/lyapunov/4/logs"
 #
 # IMPORTANT -- warm the cache before your first sbatch, with the SAME
 # JULIA_CPU_TARGET=generic set below (a cache built without it targets one
@@ -86,7 +86,7 @@ set -euo pipefail
 # see the note above.
 export JULIA_CPU_TARGET=generic
 
-mkdir -p "$HOME/results/bh/lyapunov/5/logs"
+mkdir -p "$HOME/results/bh/lyapunov/4/logs"
 
 cd "$SLURM_SUBMIT_DIR"
 
