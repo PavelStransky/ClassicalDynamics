@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=1G
+#SBATCH --mem-per-cpu=2G
 #SBATCH --array=0-650                  # one task per (J, E) pair: 21 J values x 31 E values
 #SBATCH --output=/home/%u/results/bh/lyapunov/5/logs/bhmap_%a.out
 #SBATCH --error=/home/%u/results/bh/lyapunov/5/logs/bhmap_%a.err
