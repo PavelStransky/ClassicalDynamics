@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=1G               # generous margin for DifferentialEquations/Plots precompilation; see note below
-#SBATCH --array=0-650%300              # one task per (J, E) pair: 21 J values x 31 E values
+#SBATCH --array=0-60500%300            # one task per (J, E) pair: 201 J values x 301 E values
 #SBATCH --output=/home/%u/results/bh/lyapunov/5/logs/bhmap_%a.out
 #SBATCH --error=/home/%u/results/bh/lyapunov/5/logs/bhmap_%a.err
 # #SBATCH --mail-user=you@example.com  # uncomment and fill in to get end/fail notifications
@@ -23,13 +23,13 @@
 # recomputing everything.
 #
 # SLURM's MaxArraySize (check with `scontrol show config | grep
-# MaxArraySize`) may be smaller than the pair count above -- currently 651
-# (21 J values x 31 E values), so unlikely to be an issue, but if J_VALUES /
-# ENERGY_VALUES grow again and sbatch rejects the --array range, split the
-# sweep into chunks with ARRAY_OFFSET, e.g. from the repo root:
+# MaxArraySize`) may well be smaller than the pair count above -- currently
+# 60501 (201 J values x 301 E values), which is a large array and a real
+# candidate for hitting that limit. If sbatch rejects the --array range,
+# split the sweep into chunks with ARRAY_OFFSET, e.g. from the repo root:
 #
 #   chunk=1000
-#   total=651   # = length(J_VALUES) * length(ENERGY_VALUES) in BHMapChimera.jl
+#   total=60501   # = length(J_VALUES) * length(ENERGY_VALUES) in BHMapChimera.jl
 #   for ((offset=0; offset<total; offset+=chunk)); do
 #       last=$(( offset + chunk - 1 )); (( last >= total )) && last=$(( total - 1 ))
 #       sbatch --array=0-$(( last - offset ))%300 --export=ALL,ARRAY_OFFSET=$offset BHMapChimera.sh
@@ -43,12 +43,15 @@
 # --output/--error when the job starts, before the mkdir -p below runs), so
 # create it once by hand: mkdir -p "$HOME/results/bh/lyapunov/5/logs"
 #
-# IMPORTANT -- warm the cache before your first sbatch: with hundreds of
-# array tasks starting close together, each one that finds no compiled
+# IMPORTANT -- warm the cache before your first sbatch, with the SAME
+# JULIA_CPU_TARGET=generic set below (a cache built without it targets one
+# specific node's CPU and won't be portable -- see that note). With hundreds
+# of array tasks starting close together, each one that finds no valid
 # cache tries to precompile DifferentialEquations/Plots/etc. itself; they
 # race on the same lock files under ~/.julia/compiled ("stale pidfile"
-# warnings) and can each briefly need well over 1G just to compile. Two
-# steps, from the repo root:
+# warnings) and can each briefly need well over 1G just to compile. Steps,
+# from the repo root:
+#   export JULIA_CPU_TARGET=generic
 #   salloc -n1 --mem=4G -p ffa-preempt
 #   srun julia -e 'using Pkg; Pkg.precompile()'   # let it run to completion
 #   srun julia BHMapChimera.jl                    # SLURM_ARRAY_TASK_ID unset -> runs
@@ -60,6 +63,10 @@
 #                                                  # alone doesn't always catch those.
 # Re-run `srun julia BHMapChimera.jl` once more (still no SLURM_ARRAY_TASK_ID)
 # and confirm no more "Being precompiled" lines before submitting the array.
+# If some nodes still recompile after this, they likely have a CPU feature
+# JULIA_CPU_TARGET=generic doesn't cover either -- consider adding
+# `#SBATCH --constraint=...` to pin the array to one consistent CPU family
+# instead (see the node feature table in Chimera.md).
 #
 # Adjust --partition/--time/--array/--mem-per-cpu to taste; see Chimera.md
 # for the full partition table. If Julia is managed via a module on your
@@ -68,6 +75,16 @@
 set -euo pipefail
 
 # module load julia
+
+# Chimera's nodes span very different CPU generations (some lack AVX2/FMA
+# entirely, others have AVX-512 -- see the node table in Chimera.md). Julia
+# precompiles native code for the exact CPU it ran on by default, so a
+# cache warmed on one node's CPU is invalid on a node with different
+# features and gets silently recompiled there. `generic` makes the cache
+# portable across all of them, at some cost to per-trajectory speed. This
+# MUST also be set (identically) when warming the cache interactively --
+# see the note above.
+export JULIA_CPU_TARGET=generic
 
 mkdir -p "$HOME/results/bh/lyapunov/5/logs"
 

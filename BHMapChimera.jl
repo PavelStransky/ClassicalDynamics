@@ -30,7 +30,7 @@ global_logger(ConsoleLogger(stderr, Logging.Warn))
 # Random.seed!(1234)
 
 # Constants and parameters
-const TRAJECTORIES = 100
+const TRAJECTORIES = 1000
 const U = 1.0            # Float64 so modelParameters is a concrete NTuple -> type-stable EquationOfMotion!
 const L = 7
 
@@ -82,8 +82,8 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
     return result, positive
 end
 
-const J_VALUES = collect(LinRange(-0.5, 0.5, 21))
-const ENERGY_VALUES = collect(LinRange(0.0, 1.5, 31))
+const J_VALUES = collect(LinRange(-0.5, 0.5, 201))
+const ENERGY_VALUES = collect(LinRange(0.0, 1.5, 301))
 
 offset = parse(Int, get(ENV, "ARRAY_OFFSET", "0"))
 
