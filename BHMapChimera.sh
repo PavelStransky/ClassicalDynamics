@@ -43,16 +43,23 @@
 # --output/--error when the job starts, before the mkdir -p below runs), so
 # create it once by hand: mkdir -p "$HOME/results/bh/lyapunov/5/logs"
 #
-# IMPORTANT -- precompile once before your first sbatch: with hundreds of
+# IMPORTANT -- warm the cache before your first sbatch: with hundreds of
 # array tasks starting close together, each one that finds no compiled
 # cache tries to precompile DifferentialEquations/Plots/etc. itself; they
 # race on the same lock files under ~/.julia/compiled ("stale pidfile"
-# warnings) and can each briefly need well over 1G just to compile, which is
-# what caused the OOM kill. Avoid the race (and most of the memory spike) by
-# precompiling serially first, from the repo root:
+# warnings) and can each briefly need well over 1G just to compile. Two
+# steps, from the repo root:
 #   salloc -n1 --mem=4G -p ffa-preempt
-#   srun julia BHMapChimera.jl   # Ctrl-C once it starts computing trajectories
-# After that the array tasks reuse the warm cache instead of rebuilding it.
+#   srun julia -e 'using Pkg; Pkg.precompile()'   # let it run to completion
+#   srun julia BHMapChimera.jl                    # SLURM_ARRAY_TASK_ID unset -> runs
+#                                                  # the full sweep; Ctrl-C after a few
+#                                                  # (J, E) pairs finish, not immediately --
+#                                                  # some extensions (autodiff/sparse
+#                                                  # Jacobian) only get triggered partway
+#                                                  # through a real solve, and Pkg.precompile()
+#                                                  # alone doesn't always catch those.
+# Re-run `srun julia BHMapChimera.jl` once more (still no SLURM_ARRAY_TASK_ID)
+# and confirm no more "Being precompiled" lines before submitting the array.
 #
 # Adjust --partition/--time/--array/--mem-per-cpu to taste; see Chimera.md
 # for the full partition table. If Julia is managed via a module on your
@@ -65,5 +72,15 @@ set -euo pipefail
 mkdir -p "$HOME/results/bh/lyapunov/5/logs"
 
 cd "$SLURM_SUBMIT_DIR"
+
+# Diagnostics: if the array still wants to precompile despite a warm cache,
+# compare this against the same commands run interactively (salloc) -- a
+# different `julia` (PATH), $HOME, or active project would each explain it,
+# since any of those points to a different (cold) depot/cache.
+echo "host: $(hostname)"
+echo "HOME: $HOME"
+echo "julia: $(command -v julia)"
+julia --version
+julia -e 'println.(Base.DEPOT_PATH); using Pkg; println(Base.active_project())'
 
 srun julia BHMapChimera.jl
