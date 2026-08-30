@@ -1,4 +1,5 @@
 using DifferentialEquations, DiffEqCallbacks
+using ODEInterfaceDiffEq       # provides DP8 (Hairer's dop853), the default solver in TrajectoryLyapunov
 using LinearAlgebra
 using Random
 using Statistics
