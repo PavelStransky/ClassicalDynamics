@@ -31,7 +31,7 @@ const TRAJECTORIES = 1000
 const U = 1.0            # Float64 so modelParameters is a concrete NTuple -> type-stable EquationOfMotion!
 const L = 7
 
-const RESULTS_DIR = get(ENV, "BH_RESULTS_DIR", "results/bh/lyapunov/5/")
+const RESULTS_DIR = get(ENV, "BH_RESULTS_DIR", ENV["HOME"] * "/results/bh/lyapunov/5/")
 
 # Tangent-dynamics method for the Lyapunov exponent:
 #   :vector -> single deviation vector, matrix-free J*v (fast; largest exponent only) -- default here

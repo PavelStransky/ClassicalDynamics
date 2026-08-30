@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=1G
 #SBATCH --array=0-15250                # one task per (J, E) pair: 101 J values x 151 E values, 300 running at once
-#SBATCH --output=results/bh/lyapunov/5/logs/bhmap_%a.out
-#SBATCH --error=results/bh/lyapunov/5/logs/bhmap_%a.err
+#SBATCH --output=/home/%u/results/bh/lyapunov/5/logs/bhmap_%a.out
+#SBATCH --error=/home/%u/results/bh/lyapunov/5/logs/bhmap_%a.err
 # #SBATCH --mail-user=you@example.com  # uncomment and fill in to get end/fail notifications
 # #SBATCH --mail-type=END,FAIL
 
@@ -34,6 +34,14 @@
 #       sbatch --array=0-$(( last - offset ))%300 --export=ALL,ARRAY_OFFSET=$offset BHMapChimera.sh
 #   done
 #
+# Results and logs go under $HOME/results/bh/lyapunov/5/ (on Chimera, home is
+# always /home/<login>). #SBATCH directives are parsed by sbatch itself, not
+# a shell, so $HOME can't be used there directly -- %u (SLURM's own filename
+# pattern for the submitting user) is used instead and expands the same way.
+# The log directory must exist before the *first* submission (SLURM opens
+# --output/--error when the job starts, before the mkdir -p below runs), so
+# create it once by hand: mkdir -p "$HOME/results/bh/lyapunov/5/logs"
+#
 # Adjust --partition/--time/--array/--mem-per-cpu to taste; see Chimera.md
 # for the full partition table. If Julia is managed via a module on your
 # account, uncomment the module load line below.
@@ -42,7 +50,7 @@ set -euo pipefail
 
 # module load julia
 
-mkdir -p results/bh/lyapunov/5/logs
+mkdir -p "$HOME/results/bh/lyapunov/5/logs"
 
 cd "$SLURM_SUBMIT_DIR"
 
