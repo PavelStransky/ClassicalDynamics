@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=1G
 #SBATCH --array=0-15250                # one task per (J, E) pair: 101 J values x 151 E values, 300 running at once
-#SBATCH --output=/home/strap8am/results/bh/lyapunov/5/logs/bhmap_%a.out
-#SBATCH --error=/home/strap8am/results/bh/lyapunov/5/logs/bhmap_%a.err
+#SBATCH --output=results/bh/lyapunov/5/logs/bhmap_%a.out
+#SBATCH --error=results/bh/lyapunov/5/logs/bhmap_%a.err
 # #SBATCH --mail-user=you@example.com  # uncomment and fill in to get end/fail notifications
 # #SBATCH --mail-type=END,FAIL
 
@@ -42,7 +42,7 @@ set -euo pipefail
 
 # module load julia
 
-mkdir -p /home/strap8am/results/bh/lyapunov/5/logs
+mkdir -p results/bh/lyapunov/5/logs
 
 cd "$SLURM_SUBMIT_DIR"
 
