@@ -282,7 +282,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
     else
         callback = CallbackSet(projection, rescale, record, DiscreteCallback(TimeoutCondition, terminate!))
     end
-    time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=maximumIterations, isoutofdomain=CheckDomain, verbose=true)
+    time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=maximumIterations, isoutofdomain=CheckDomain, verbose=DEVerbosity())
 
     # Get results - average over the trailing window of running-exponent samples (empty -> exactly 0)
     history = integrationParameters.historyLyapunovExponent
@@ -669,7 +669,7 @@ function Trajectory(initialCondition, parameters;
 
     fnc = ODEFunction(EquationOfMotion!)
     problem = ODEProblem(fnc, x0, timeInterval, integrationParameters)
-    time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, maxiters=maxIterations, isoutofdomain=CheckDomain, verbose=verbose)
+    time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, maxiters=maxIterations, isoutofdomain=CheckDomain, verbose=(verbose ? DEVerbosity() : DEVerbosity(SciMLLogging.None())))
 
     println("Calculation time = $time, Trajectory time = $(solution.t[end]), Final energy = $(Energy(solution[end], parameters))")
 
@@ -714,7 +714,7 @@ function TestTrajectory(x, parameters; sectionPlane=3)
         lyapunovs = SavedValues(Float64, Float64)                                              # For a graph of Lyapunov exponents
 
         callback = CallbackSet(ManifoldProjection(EnergyConservation!; save=false, autodiff=AutoForwardDiff(), resid_prototype=zeros(length(x0))), PeriodicCallback(RescaleΦ!, 2.0; save_positions=(false, false)), SavingCallback(RunningLyapunov, lyapunovs, saveat=2:2:1e6), DiscreteCallback(TimeoutCondition, terminate!))
-        time = @elapsed solution = solve(problem, method, reltol=1e-8, abstol=1e-8, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=1E8, isoutofdomain=CheckDomain, verbose=true)    
+        time = @elapsed solution = solve(problem, method, reltol=1e-8, abstol=1e-8, callback=callback, save_on=true, save_everystep=false, save_start=false, save_end=false, maxiters=1E8, isoutofdomain=CheckDomain, verbose=DEVerbosity())
 
         lyapunov = mean(integrationParameters.historyLyapunovExponent)
         lv = var(integrationParameters.historyLyapunovExponent)
