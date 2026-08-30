@@ -20,7 +20,7 @@ end
 # Random.seed!(1234)
 
 # Constants and parameters
-const TRAJECTORIES = 240
+const TRAJECTORIES = 480
 const U = 1.0            # Float64 so modelParameters is a concrete NTuple -> type-stable EquationOfMotion!
 const L = 5
 
@@ -77,7 +77,8 @@ end
 
 for j in LinRange(-0.5, 0.5, 101)
     for energy in LinRange(0.0, 1.5, 151)
-        file = "/home/stransky/results/bh/lyapunov/5/" * @sprintf("%.3f_%.3f_%.3f", j, U, energy) * ".txt"
+        mkpath("/home/stransky/results/bh/lyapunov/$L")
+        file = "/home/stransky/results/bh/lyapunov/$L/" * @sprintf("%.3f_%.3f_%.3f", j, U, energy) * ".txt"
         if isfile(file) 
             trajectories = countlines(file) 
         else 
