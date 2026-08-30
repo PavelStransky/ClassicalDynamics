@@ -1,5 +1,7 @@
 using DifferentialEquations, DiffEqCallbacks
-using ODEInterfaceDiffEq       # provides DP8 (Hairer's dop853), the default solver in TrajectoryLyapunov
+using OrdinaryDiffEqHighOrderRK   # provides DP8, TanYam7, TsitPap8: since OrdinaryDiffEq v7 / DifferentialEquations v8,
+                                   # `using DifferentialEquations` only re-exports a small default solver set, and
+                                   # DP8 (the default solver in TrajectoryLyapunov) must be imported explicitly.
 using LinearAlgebra
 using Random
 using Statistics
