@@ -2,6 +2,8 @@ using DifferentialEquations, DiffEqCallbacks
 using OrdinaryDiffEqHighOrderRK   # provides DP8, TanYam7, TsitPap8: since OrdinaryDiffEq v7 / DifferentialEquations v8,
                                    # `using DifferentialEquations` only re-exports a small default solver set, and
                                    # DP8 (the default solver in TrajectoryLyapunov) must be imported explicitly.
+using DiffEqBase                  # solution.retcode is compared against DiffEqBase.ReturnCode.* below; DiffEqBase
+                                   # is a transitive dependency but its name isn't bound in Main without this.
 using LinearAlgebra
 using Random
 using Statistics
