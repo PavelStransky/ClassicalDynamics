@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=1G
-#SBATCH --array=0-15250                # one task per (J, E) pair: 101 J values x 151 E values, 300 running at once
+#SBATCH --array=0-650                  # one task per (J, E) pair: 21 J values x 31 E values
 #SBATCH --output=/home/%u/results/bh/lyapunov/5/logs/bhmap_%a.out
 #SBATCH --error=/home/%u/results/bh/lyapunov/5/logs/bhmap_%a.err
 # #SBATCH --mail-user=you@example.com  # uncomment and fill in to get end/fail notifications
@@ -22,13 +22,14 @@
 # partition uses REQUEUE preemption) picks up where it left off instead of
 # recomputing everything.
 #
-# SLURM's MaxArraySize (check with
-# `scontrol show config | grep MaxArraySize`) may be smaller than 15251. If
-# sbatch rejects the --array range above, split the sweep into chunks with
-# ARRAY_OFFSET, e.g. from the repo root:
+# SLURM's MaxArraySize (check with `scontrol show config | grep
+# MaxArraySize`) may be smaller than the pair count above -- currently 651
+# (21 J values x 31 E values), so unlikely to be an issue, but if J_VALUES /
+# ENERGY_VALUES grow again and sbatch rejects the --array range, split the
+# sweep into chunks with ARRAY_OFFSET, e.g. from the repo root:
 #
 #   chunk=1000
-#   total=15251
+#   total=651   # = length(J_VALUES) * length(ENERGY_VALUES) in BHMapChimera.jl
 #   for ((offset=0; offset<total; offset+=chunk)); do
 #       last=$(( offset + chunk - 1 )); (( last >= total )) && last=$(( total - 1 ))
 #       sbatch --array=0-$(( last - offset ))%300 --export=ALL,ARRAY_OFFSET=$offset BHMapChimera.sh
