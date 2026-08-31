@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=1G               # generous margin for DifferentialEquations/Plots precompilation; see note below
-#SBATCH --array=0-60500%300            # one task per (J, E) pair: 201 J values x 301 E values
+#SBATCH --array=0-30400%300            # one task per (J, E) pair: 201 J values x 301 E values
 #SBATCH --output=/home/%u/results/bh/lyapunov/4/logs/bhmap_%a.out
 #SBATCH --error=/home/%u/results/bh/lyapunov/4/logs/bhmap_%a.err
 # #SBATCH --mail-user=you@example.com  # uncomment and fill in to get end/fail notifications

@@ -82,7 +82,7 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
     return result, positive
 end
 
-const J_VALUES = collect(LinRange(-0.5, 0.5, 201))
+const J_VALUES = collect(LinRange(0, 0.5, 101))
 const ENERGY_VALUES = collect(LinRange(0.0, 1.5, 301))
 
 offset = parse(Int, get(ENV, "ARRAY_OFFSET", "0"))
