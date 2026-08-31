@@ -8,14 +8,21 @@ using Printf
 #
 # Unlike BHMap.jl (which parallelises trajectories within one job via
 # Distributed/pmap), this version runs single-threaded and relies on SLURM
-# to parallelise across (J, E) pairs instead: one array task computes one
-# (J, E) pair sequentially, so each task needs only one CPU.
+# to parallelise across (J, E) pairs instead: one array task computes a
+# contiguous block of at most PAIRS_PER_TASK pairs sequentially, so each
+# task needs only one CPU. Batching many pairs per task amortises the
+# multi-minute Julia + DifferentialEquations startup over the whole block
+# instead of paying it again for every single pair.
 #
-# The full (J, E) grid is flattened into a single index. With
-# SLURM_ARRAY_TASK_ID set, this run only computes the pair at that index;
-# without it (e.g. running by hand), it falls back to the full sweep, same
-# as BHMap.jl. ARRAY_OFFSET shifts the index, so the sweep can be split
-# across several sbatch submissions if the grid is larger than SLURM's
+# The full (J, E) grid is flattened into a single 0-based index, J-major /
+# E-minor. With SLURM_ARRAY_TASK_ID set, task t computes the pairs with
+# flat index t*PAIRS_PER_TASK .. (t+1)*PAIRS_PER_TASK-1 (clamped to the
+# grid); without it (e.g. running by hand), it falls back to the full
+# sweep, same as BHMap.jl. The array therefore needs
+# cld(length(J_VALUES) * length(ENERGY_VALUES), PAIRS_PER_TASK) tasks --
+# the script prints the exact --array range on startup. ARRAY_OFFSET shifts
+# the task id (counted in tasks, not pairs), so the sweep can be split
+# across several sbatch submissions if it is larger than SLURM's
 # MaxArraySize (see BHMapChimera.sh). This script never plots, so it skips
 # loading Plots/ColorSchemes/PyPlot entirely -- see the CD_NO_PLOTS note in
 # modules/ClassicalDynamics.jl.
@@ -32,7 +39,7 @@ global_logger(ConsoleLogger(stderr, Logging.Warn))
 # Constants and parameters
 const TRAJECTORIES = 1000
 const U = 1.0            # Float64 so modelParameters is a concrete NTuple -> type-stable EquationOfMotion!
-const L = 4
+const L = 6
 
 const RESULTS_DIR = get(ENV, "BH_RESULTS_DIR", ENV["HOME"] * "/results/bh/lyapunov/$L/")
 
@@ -85,16 +92,39 @@ end
 const J_VALUES = collect(LinRange(0, 0.5, 101))
 const ENERGY_VALUES = collect(LinRange(0.0, 1.5, 301))
 
+# One SLURM array task computes a contiguous block of at most PAIRS_PER_TASK
+# pairs from the flattened (J, E) grid. One pair takes up to ~5 min, so 100
+# pairs stay well under Chimera's 12 h per-task limit.
+const PAIRS_PER_TASK = 50
+
+const N_ENERGY = length(ENERGY_VALUES)
+const TOTAL_PAIRS = length(J_VALUES) * N_ENERGY
+const N_TASKS = cld(TOTAL_PAIRS, PAIRS_PER_TASK)
+
+# Flat 0-based index -> (J, E), J-major / E-minor.
+pairAt(k) = (J_VALUES[k ÷ N_ENERGY + 1], ENERGY_VALUES[k % N_ENERGY + 1])
+
+println("Grid: $(length(J_VALUES)) J x $N_ENERGY E = $TOTAL_PAIRS pairs; ",
+        "$PAIRS_PER_TASK pairs/task -> submit with --array=0-$(N_TASKS - 1)")
+
+# ARRAY_OFFSET shifts the task id (counted in tasks, not pairs), so the sweep
+# can be split across several sbatch submissions (see BHMapChimera.sh).
 offset = parse(Int, get(ENV, "ARRAY_OFFSET", "0"))
 
 pairs = if haskey(ENV, "SLURM_ARRAY_TASK_ID")
     taskId = parse(Int, ENV["SLURM_ARRAY_TASK_ID"]) + offset # SLURM array indices are 0-based
-    nEnergy = length(ENERGY_VALUES)
-    jIndex = taskId ÷ nEnergy + 1
-    eIndex = taskId % nEnergy + 1
-    [(J_VALUES[jIndex], ENERGY_VALUES[eIndex])]
+    startIndex = taskId * PAIRS_PER_TASK
+
+    if startIndex >= TOTAL_PAIRS
+        @warn "Task index past the end of the grid; nothing to compute" taskId startIndex TOTAL_PAIRS
+        Tuple{Float64, Float64}[]
+    else
+        stopIndex = min(startIndex + PAIRS_PER_TASK, TOTAL_PAIRS) - 1
+        println("Task $taskId: flat pair indices $startIndex..$stopIndex ($(stopIndex - startIndex + 1) pairs)")
+        [pairAt(k) for k in startIndex:stopIndex]
+    end
 else
-    [(j, energy) for j in J_VALUES for energy in ENERGY_VALUES]
+    [pairAt(k) for k in 0:(TOTAL_PAIRS - 1)]
 end
 
 for (j, energy) in pairs

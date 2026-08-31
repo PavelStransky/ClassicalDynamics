@@ -1,37 +1,42 @@
 #!/bin/bash
-#SBATCH --job-name=bhmap4
+#SBATCH --job-name=bhmap6
 #SBATCH --partition=ffa-preempt        # preemptible partition; job resumes cleanly (see note below)
-#SBATCH --time=01:00:00                # generous single-CPU budget for one (J, E) pair; tune after a test run
+#SBATCH --time=5:00:00                 # PAIRS_PER_TASK (50) pairs x up to ~5 min each, under Chimera's 12 h cap; tune after a test run
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=1G               # generous margin for DifferentialEquations/Plots precompilation; see note below
-#SBATCH --array=0-30400%300            # one task per (J, E) pair: 201 J values x 301 E values
-#SBATCH --output=/home/%u/results/bh/lyapunov/4/logs/bhmap_%a.out
-#SBATCH --error=/home/%u/results/bh/lyapunov/4/logs/bhmap_%a.err
-# #SBATCH --mail-user=you@example.com  # uncomment and fill in to get end/fail notifications
-# #SBATCH --mail-type=END,FAIL
+#SBATCH --array=0-608%100              # one task per block of PAIRS_PER_TASK pairs: cld(101*301, 100) = 305 tasks (BHMapChimera.jl prints the exact range)
+#SBATCH --output=/home/%u/results/bh/lyapunov/6/logs/bhmap_%a.out
+#SBATCH --error=/home/%u/results/bh/lyapunov/6/logs/bhmap_%a.err
+#SBATCH --mail-user=pavel.stransky@matfyz.cuni.cz  # uncomment and fill in to get end/fail notifications
+#SBATCH --mail-type=END,FAIL
 
 # Submit from the repository root with:
 #   sbatch BHMapChimera.sh
 #
-# Each array task computes exactly one (J, E) pair on a single CPU (index
-# SLURM_ARRAY_TASK_ID, 0-based, flattened over the J-major, E-minor grid).
-# Results are written per (J, U, E) file, and completed trajectory counts
-# are read back from disk on restart, so a requeued/preempted task (this
-# partition uses REQUEUE preemption) picks up where it left off instead of
-# recomputing everything.
+# Each array task computes a contiguous block of at most PAIRS_PER_TASK
+# pairs (set in BHMapChimera.jl, currently 100) on a single CPU: task t
+# takes flat indices t*PAIRS_PER_TASK .. (t+1)*PAIRS_PER_TASK-1 over the
+# J-major, E-minor grid. Batching amortises the multi-minute Julia +
+# DifferentialEquations startup over ~100 solves instead of one, which is
+# what keeps CPU efficiency reasonable. Results are written per (J, U, E)
+# file, and completed trajectory counts are read back from disk on restart,
+# so a requeued/preempted task (this partition uses REQUEUE preemption)
+# picks up where it left off instead of recomputing everything.
 #
-# SLURM's MaxArraySize (check with `scontrol show config | grep
-# MaxArraySize`) may well be smaller than the pair count above -- currently
-# 60501 (201 J values x 301 E values), which is a large array and a real
-# candidate for hitting that limit. If sbatch rejects the --array range,
-# split the sweep into chunks with ARRAY_OFFSET, e.g. from the repo root:
+# The array size is cld(length(J_VALUES) * length(ENERGY_VALUES),
+# PAIRS_PER_TASK) -- currently cld(101*301, 100) = 305, so --array=0-304.
+# Run `julia BHMapChimera.jl` once with no SLURM_ARRAY_TASK_ID and it
+# prints the exact range to use. 305 is far below SLURM's MaxArraySize
+# (`scontrol show config | grep MaxArraySize`), but if a much finer grid
+# ever pushes past it, split the sweep with ARRAY_OFFSET (counted in tasks,
+# not pairs), e.g. from the repo root:
 #
-#   chunk=1000
-#   total=60501   # = length(J_VALUES) * length(ENERGY_VALUES) in BHMapChimera.jl
-#   for ((offset=0; offset<total; offset+=chunk)); do
-#       last=$(( offset + chunk - 1 )); (( last >= total )) && last=$(( total - 1 ))
+#   chunk=200
+#   ntasks=305   # = cld(length(J_VALUES)*length(ENERGY_VALUES), PAIRS_PER_TASK), printed by BHMapChimera.jl
+#   for ((offset=0; offset<ntasks; offset+=chunk)); do
+#       last=$(( offset + chunk - 1 )); (( last >= ntasks )) && last=$(( ntasks - 1 ))
 #       sbatch --array=0-$(( last - offset ))%300 --export=ALL,ARRAY_OFFSET=$offset BHMapChimera.sh
 #   done
 #
@@ -86,7 +91,7 @@ set -euo pipefail
 # see the note above.
 export JULIA_CPU_TARGET=generic
 
-mkdir -p "$HOME/results/bh/lyapunov/4/logs"
+mkdir -p "$HOME/results/bh/lyapunov/6/logs"
 
 cd "$SLURM_SUBMIT_DIR"
 
