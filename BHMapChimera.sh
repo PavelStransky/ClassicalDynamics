@@ -6,9 +6,9 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=1G               # generous margin for DifferentialEquations/Plots precompilation; see note below
-#SBATCH --array=0-4060%400              # one task per block of PAIRS_PER_TASK pairs: cld(101*301, 100) = 305 tasks (BHMapChimera.jl prints the exact range)
-#SBATCH --output=/home/%u/results/bh/lyapunov/7/logs/bhmap_%a.out
-#SBATCH --error=/home/%u/results/bh/lyapunov/7/logs/bhmap_%a.err
+#SBATCH --array=0-2040%400             # one task per block of PAIRS_PER_TASK pairs: cld(101*301, 100) = 305 tasks (BHMapChimera.jl prints the exact range)
+#SBATCH --output=/home/%u/results/bh/lyapunov/4/logs/bhmap_%a.out
+#SBATCH --error=/home/%u/results/bh/lyapunov/4/logs/bhmap_%a.err
 #SBATCH --mail-user=pavel.stransky@matfyz.cuni.cz  # uncomment and fill in to get end/fail notifications
 #SBATCH --mail-type=END,FAIL
 
@@ -91,7 +91,7 @@ set -euo pipefail
 # see the note above.
 export JULIA_CPU_TARGET=generic
 
-mkdir -p "$HOME/results/bh/lyapunov/7/logs"
+mkdir -p "$HOME/results/bh/lyapunov/4/logs"
 
 cd "$SLURM_SUBMIT_DIR"
 
