@@ -39,9 +39,9 @@ global_logger(ConsoleLogger(stderr, Logging.Warn))
 # Constants and parameters
 const TRAJECTORIES = 1000
 const U = 1.0            # Float64 so modelParameters is a concrete NTuple -> type-stable EquationOfMotion!
-const L = 6
+const L = 7
 
-const RESULTS_DIR = get(ENV, "BH_RESULTS_DIR", ENV["HOME"] * "/results/bh/lyapunov/$L/")
+const RESULTS_DIR = get(ENV, "BH_RESULTS_DIR", joinpath(homedir(), "results", "bh", "lyapunov", "$L"))
 
 # Tangent-dynamics method for the Lyapunov exponent:
 #   :vector -> single deviation vector, matrix-free J*v (fast; largest exponent only) -- default here
@@ -89,13 +89,13 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
     return result, positive
 end
 
-const J_VALUES = collect(LinRange(0, 0.5, 101))
-const ENERGY_VALUES = collect(LinRange(0.0, 1.5, 301))
+const J_VALUES = collect(LinRange(-0.5, 0.5, 201))
+const ENERGY_VALUES = collect(LinRange(-0.5, 0.0, 101))
 
 # One SLURM array task computes a contiguous block of at most PAIRS_PER_TASK
 # pairs from the flattened (J, E) grid. One pair takes up to ~5 min, so 100
 # pairs stay well under Chimera's 12 h per-task limit.
-const PAIRS_PER_TASK = 50
+const PAIRS_PER_TASK = 5
 
 const N_ENERGY = length(ENERGY_VALUES)
 const TOTAL_PAIRS = length(J_VALUES) * N_ENERGY
@@ -124,11 +124,14 @@ pairs = if haskey(ENV, "SLURM_ARRAY_TASK_ID")
         [pairAt(k) for k in startIndex:stopIndex]
     end
 else
+    exit(1)
     [pairAt(k) for k in 0:(TOTAL_PAIRS - 1)]
 end
 
+mkpath(RESULTS_DIR)
+
 for (j, energy) in pairs
-    file = RESULTS_DIR * @sprintf("%.3f_%.3f_%.3f", j, U, energy) * ".txt"
+    file = joinpath(RESULTS_DIR, @sprintf("%.3f_%.3f_%.3f", j, U, energy) * ".txt")
     trajectories = isfile(file) ? countlines(file) : 0
 
     println("Starting J = $j, U = $U, E = $energy");
