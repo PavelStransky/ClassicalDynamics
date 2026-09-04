@@ -39,7 +39,7 @@ global_logger(ConsoleLogger(stderr, Logging.Warn))
 # Constants and parameters
 const TRAJECTORIES = 1000
 const U = 1.0            # Float64 so modelParameters is a concrete NTuple -> type-stable EquationOfMotion!
-const L = 4
+const L = 7
 
 const RESULTS_DIR = get(ENV, "BH_RESULTS_DIR", joinpath(homedir(), "results", "bh", "lyapunov", "$L"))
 
