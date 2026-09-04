@@ -90,7 +90,7 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
 end
 
 const U_VALUES = collect(LinRange(0.0, 1.0, 101))
-const ENERGY_VALUES = collect(LinRange(-0.5, 1.5, 201))
+const ENERGY_VALUES = collect(LinRange(-2.25, 2.25, 451))
 
 # One SLURM array task computes a contiguous block of at most PAIRS_PER_TASK
 # pairs from the flattened (U, E) grid. One pair takes up to ~5 min, so 100
