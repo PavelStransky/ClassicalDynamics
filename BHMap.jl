@@ -5,7 +5,7 @@ using Statistics
 using Distributed
 using Printf
 
-workers = 26
+workers = 25
 
 if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
@@ -22,7 +22,7 @@ ENV["CD_NO_PLOTS"] = "true"
 # Random.seed!(1234)
 
 # Constants and parameters
-const TRAJECTORIES = 480
+const TRAJECTORIES = 500
 const U = 1.0            # Float64 so modelParameters is a concrete NTuple -> type-stable EquationOfMotion!
 const L = 3
 
@@ -33,7 +33,7 @@ const PATH = get(ENV, "BH_RESULTS_DIR", joinpath(homedir(), "results", "bh", "ly
 #   :matrix -> full 2f x 2f stability matrix + eigvals (slower; reproduces the original estimator exactly)
 const TANGENT_DYNAMICS = :vector
 
-function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001, numTrajectories=100, tangentDynamics=TANGENT_DYNAMICS)
+function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.00001, numTrajectories=100, tangentDynamics=TANGENT_DYNAMICS)
     # tangentDynamics is captured as a closure local (not a global) so it is serialised to the pmap workers
     function SingleTrajectory()
         initialCondition = InitialCondition(energy, parameters, initialConditionEnergyTolerance)
@@ -45,6 +45,8 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
         lyapunov = TrajectoryLyapunov(initialCondition, parameters;
             sectionPlane=-1, maximumSectionPoints=-1, maximumIterations=1E6, tangentDynamics=tangentDynamics,
             regularThreshold=1e-4,
+            timeInterval=(0, 1e6),
+            historyLyapunovExponentLength=1000,
             manifoldProjection=BoseHubbardConservation!)[2]
 
         return lyapunov
@@ -57,7 +59,7 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
     L, J, U = parameters
 
     nonzero = filter(x -> x > 0, result)
-    positive = filter(x -> x > 0.0005, result)
+    positive = filter(x -> x > 0.0002, result)
 
     println("Finished J = $J, U = $U, E = $energy");
     println("Number of new trajectories: $(length(result)) ($(length(positive)) unstable)");
