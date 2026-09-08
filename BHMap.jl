@@ -5,7 +5,7 @@ using Statistics
 using Distributed
 using Printf
 
-workers = 24
+workers = 26
 
 if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
@@ -22,9 +22,9 @@ ENV["CD_NO_PLOTS"] = "true"
 # Random.seed!(1234)
 
 # Constants and parameters
-const TRAJECTORIES = 1000
+const TRAJECTORIES = 480
 const U = 1.0            # Float64 so modelParameters is a concrete NTuple -> type-stable EquationOfMotion!
-const L = 5
+const L = 3
 
 const PATH = get(ENV, "BH_RESULTS_DIR", joinpath(homedir(), "results", "bh", "lyapunov", "$L"))
 
@@ -44,6 +44,7 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
 
         lyapunov = TrajectoryLyapunov(initialCondition, parameters;
             sectionPlane=-1, maximumSectionPoints=-1, maximumIterations=1E6, tangentDynamics=tangentDynamics,
+            regularThreshold=1e-4,
             manifoldProjection=BoseHubbardConservation!)[2]
 
         return lyapunov
@@ -56,7 +57,7 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
     L, J, U = parameters
 
     nonzero = filter(x -> x > 0, result)
-    positive = filter(x -> x > 0.005, result)
+    positive = filter(x -> x > 0.0005, result)
 
     println("Finished J = $J, U = $U, E = $energy");
     println("Number of new trajectories: $(length(result)) ($(length(positive)) unstable)");
@@ -79,8 +80,8 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
     return result, positive
 end
 
-for j in LinRange(-1.0, 1.0, 401)
-    for energy in LinRange(-0.5, 1.5, 401)
+for j in LinRange(-1.0, 1.0, 101)
+    for energy in LinRange(-0.5, 1.5, 101)
         mkpath(PATH)
         file = PATH * "/" * @sprintf("%.3f_%.3f_%.3f", j, U, energy) * ".txt"
         if isfile(file) 

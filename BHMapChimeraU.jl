@@ -57,6 +57,7 @@ function SingleTrajectory(energy, parameters, initialConditionEnergyTolerance, t
 
     return TrajectoryLyapunov(initialCondition, parameters;
         sectionPlane=-1, maximumSectionPoints=-1, maximumIterations=1E6, tangentDynamics=tangentDynamics,
+        regularThreshold=1e-4,
         manifoldProjection=BoseHubbardConservation!)[2]
 end
 
