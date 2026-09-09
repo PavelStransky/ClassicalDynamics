@@ -43,10 +43,8 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.00001
         end
 
         lyapunov = TrajectoryLyapunov(initialCondition, parameters;
-            sectionPlane=-1, maximumSectionPoints=-1, maximumIterations=1E6, tangentDynamics=tangentDynamics,
-            regularThreshold=1e-4,
-            timeInterval=(0, 1e6),
-            historyLyapunovExponentLength=1000,
+            sectionPlane=-1, maximumSectionPoints=-1,
+            tangentDynamics=tangentDynamics,
             manifoldProjection=BoseHubbardConservation!)[2]
 
         return lyapunov
