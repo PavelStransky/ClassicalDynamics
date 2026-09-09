@@ -33,7 +33,7 @@ const PATH = get(ENV, "BH_RESULTS_DIR", joinpath(homedir(), "results", "bh", "ly
 #   :matrix -> full 2f x 2f stability matrix + eigvals (slower; reproduces the original estimator exactly)
 const TANGENT_DYNAMICS = :vector
 
-function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.00001, numTrajectories=100, tangentDynamics=TANGENT_DYNAMICS)
+function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001, numTrajectories=100, tangentDynamics=TANGENT_DYNAMICS)
     # tangentDynamics is captured as a closure local (not a global) so it is serialised to the pmap workers
     function SingleTrajectory()
         initialCondition = InitialCondition(energy, parameters, initialConditionEnergyTolerance)
