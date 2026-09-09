@@ -57,7 +57,7 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.00001
     L, J, U = parameters
 
     nonzero = filter(x -> x > 0, result)
-    positive = filter(x -> x > 0.0002, result)
+    positive = filter(x -> x > 0.001, result)
 
     println("Finished J = $J, U = $U, E = $energy");
     println("Number of new trajectories: $(length(result)) ($(length(positive)) unstable)");
