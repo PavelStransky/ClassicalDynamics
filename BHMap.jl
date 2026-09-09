@@ -22,7 +22,7 @@ ENV["CD_NO_PLOTS"] = "true"
 # Random.seed!(1234)
 
 # Constants and parameters
-const TRAJECTORIES = 500
+const TRAJECTORIES = 1000
 const U = 1.0            # Float64 so modelParameters is a concrete NTuple -> type-stable EquationOfMotion!
 const L = 3
 
