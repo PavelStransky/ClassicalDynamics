@@ -27,7 +27,7 @@ for i in 1:10
         println("Energy: ", Energy(initialCondition, bhParameters))
     end
 
-    calculationTime = @elapsed lyapunovs = TrajectoryLyapunov(initialCondition, bhParameters; 
+    calculationTime = @elapsed result = TrajectoryLyapunov(initialCondition, bhParameters; 
         tangentDynamics=TANGENT_DYNAMICS,
         showFigures=true, sectionPlane=-1, maximumSectionPoints=-1, 
         regularThreshold=1e-3,
@@ -37,7 +37,10 @@ for i in 1:10
         manifoldProjection=BoseHubbardConservation!,
         saveStep=2)
 
+    lyapunov = result[2]
+
     println("Calculation time: ", calculationTime)
+    println("Lyapunov exponent: ", lyapunov)
 end
 
 readline()

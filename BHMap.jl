@@ -5,7 +5,7 @@ using Statistics
 using Distributed
 using Printf
 
-workers = 25
+workers = 10
 
 if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
@@ -24,7 +24,7 @@ ENV["CD_NO_PLOTS"] = "true"
 # Constants and parameters
 const TRAJECTORIES = 1000
 const U = 1.0            # Float64 so modelParameters is a concrete NTuple -> type-stable EquationOfMotion!
-const L = 3
+const L = 4
 
 const PATH = get(ENV, "BH_RESULTS_DIR", joinpath(homedir(), "results", "bh", "lyapunov", "$L"))
 
@@ -81,7 +81,7 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
     return result, positive
 end
 
-for j in LinRange(-1.0, 1.0, 101)
+for j in LinRange(0.0, 1.0, 51)
     for energy in LinRange(-0.5, 1.5, 101)
         mkpath(PATH)
         file = PATH * "/" * @sprintf("%.3f_%.3f_%.3f", j, U, energy) * ".txt"
