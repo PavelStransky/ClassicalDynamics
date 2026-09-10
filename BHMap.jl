@@ -5,7 +5,7 @@ using Statistics
 using Distributed
 using Printf
 
-workers = 24
+workers = 25
 
 if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
