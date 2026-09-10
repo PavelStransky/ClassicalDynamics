@@ -5,7 +5,7 @@ using Statistics
 using Distributed
 using Printf
 
-workers = 25
+workers = 24
 
 if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
@@ -45,6 +45,7 @@ function LyapunovMap(parameters, energy; initialConditionEnergyTolerance=0.0001,
         lyapunov = TrajectoryLyapunov(initialCondition, parameters;
             sectionPlane=-1, maximumSectionPoints=-1,
             tangentDynamics=tangentDynamics,
+            relaxationTime=1000,
             manifoldProjection=BoseHubbardConservation!)[2]
 
         return lyapunov

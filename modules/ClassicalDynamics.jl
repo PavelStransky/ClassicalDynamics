@@ -20,7 +20,8 @@ if CD_LOAD_PLOTS
     using Plots
     using ColorSchemes
 
-    pyplot(size = (1200,1000))
+    # pyplot(size = (1200,1000))
+    pyplot(size = (800,600))
 end
 
 """ Parameters for the Lyapunov exponent calculation.
@@ -215,7 +216,7 @@ function TrajectoryLyapunov(initialCondition, parameters;
         maximumSectionPoints=20000,
         tolerance=1e-8,                      # below ~1e-8 the exponent is limited by finite-time/shadowing scatter, not integrator error
         saveStep=2,                         # How often calculate the Lyapunov exponent and rescale the stability matrix
-        historyLyapunovExponentLength=1000,
+        historyLyapunovExponentLength=500,
         timeInterval = (0, 1e6),
         tangentDynamics = :matrix,          # :matrix -> full 2f x 2f stability matrix + eigvals (whole Lyapunov spectrum available)
                                             # :vector -> single deviation vector, matrix-free J*v, norm rescaling (largest exponent only, much faster)
