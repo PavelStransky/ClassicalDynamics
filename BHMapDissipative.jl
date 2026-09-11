@@ -12,15 +12,26 @@ using Printf
 #
 # Differences from BHMap.jl, all forced by the physics of the open system:
 #
-#   * ENERGY is the energy of the INITIAL CONDITION only. With κ ≠ 0 or γ ≠ 0 it is not conserved,
-#     so the map reads "Lyapunov exponent as a function of the initial energy shell".
+#   * ENERGY is the energy of the INITIAL CONDITION only (the CLOSED Bose-Hubbard energy, the one
+#     InitialCondition puts the state on). With κ ≠ 0, γ ≠ 0 or f ≠ 0 it is not conserved, so the map
+#     reads "Lyapunov exponent as a function of the initial energy shell".
+#     WITH A DRIVE (f ≠ 0) READ THAT CAVEAT LITERALLY: the driven flow has a compact absorbing ball
+#     and settles on an ATTRACTOR, so it largely forgets where it started. The energy axis then no
+#     longer labels a shell the trajectory stays on - it only selects which basin, and hence which of
+#     the coexisting attractors, the trajectory falls into (the note reports strong multistability).
+#     For a driven study the natural sweep is over f or Δ rather than over E.
+#   * RELAXATION_TIME discards the approach to the attractor. It matters only when driving; without a
+#     drive the undriven default of 0 is right.
 #   * There is no early stopping on convergence. The noise keeps the running exponent fluctuating,
 #     so the plateau test of ClassicalDynamics.jl is unreliable; every trajectory is integrated for
 #     the fixed INTEGRATION_TIME instead. This also makes the cost per point predictable.
-#   * The number written to the file is the INTRINSIC exponent Λ + κ/2. The damping contracts every
-#     phase-space direction equally and shifts every exponent by exactly -κ/2; removing it keeps the
-#     stored values positive, which is what the `data[data > 0]` filter of AnalyseLyapunov.py and
-#     the sentinels below assume. Set SAVE_INTRINSIC_EXPONENT = false to store the raw Λ.
+#   * The number written to the file is the INTRINSIC exponent Λ + κ/2. In the undriven model the
+#     damping contracts every phase-space direction equally and shifts every exponent by exactly
+#     -κ/2; removing it keeps the stored values positive, which is what the `data[data > 0]` filter
+#     of AnalyseLyapunov.py and the sentinels below assume. Set SAVE_INTRINSIC_EXPONENT = false to
+#     store the raw Λ - and DO set it false for driven runs, where λ_max on the attractor is already
+#     the physical exponent and must not be shifted. Note that raw Λ can then be negative (a regular
+#     attractor), which the Python filter cannot tell apart from the sentinels below.
 #   * Every trajectory gets its own noise seed, derived deterministically from (J, E, index), so a
 #     resumed run continues with fresh realisations instead of repeating the ones already stored.
 #
@@ -58,6 +69,12 @@ const κ = 0.0
 const γ = 0.1
 const σ = 0.0
 
+# Coherent driving, see bh_dissipation_driving.md and the header of BHDissipative.jl.
+#   Δ  detuning from the BOTTOM OF THE BAND (the note's Δ̃); Δ = f = 0 is the undriven model
+#   f  drive amplitude F/√N. f ≠ 0 breaks U(1), destroys the norm law and creates an attractor.
+const Δ = 0.0
+const f = 0.0
+
 # The four constants below are read by SingleTrajectory, which runs on the workers, so they have to
 # be defined there as well - a plain `const` would only ever exist on the master.
 
@@ -71,14 +88,28 @@ const σ = 0.0
 #                   e.g. (0.2/κ, 2/κ), while Σ I_i is still of order one)
 @everywhere const WINDOW = nothing
 
-# Splitting interval of the dephasing. Accuracy needs 2 U max(I) noiseStep < 0.2 and max(I) <= Σ I_i
-# = 1, so anything below 0.1/U is safe here; the cost is proportional to 1/noiseStep.
+# Splitting interval of the dephasing. Accuracy needs 2 U max(I) noiseStep < 0.2. Undriven, Σ I_i
+# never exceeds 1, so anything below 0.1/U is safe; with a drive the ring fills up to the absorbing
+# ball 4 f² L / κ² instead and noiseStep has to come down accordingly (TrajectoryLyapunovDissipative
+# checks this and warns). The cost is proportional to 1/noiseStep.
 @everywhere const NOISE_STEP = 0.05
+
+# Transient discarded before the exponent starts accumulating. With a drive the trajectory has to
+# reach its attractor first, and anything measured earlier describes the approach, not the attractor.
+@everywhere const RELAXATION_TIME = 0.0
 
 @everywhere const SAVE_INTRINSIC_EXPONENT = true
 
 const PATH = get(ENV, "BH_RESULTS_DIR",
-    joinpath(homedir(), "results", "bh", "dissipative", "$L", @sprintf("k%.3f_g%.3f_s%.3f", κ, γ, σ)))
+    joinpath(homedir(), "results", "bh", "dissipative", "$L",
+             @sprintf("k%.3f_g%.3f_s%.3f_d%.3f_f%.3f", κ, γ, σ, Δ, f)))
+
+# Λ + κ/2 removes the trivial contraction of the UNDRIVEN model, where the ring empties and every
+# exponent tends to -κ/2. A driven run has a genuine attractor whose λ_max is already the physical
+# number, so shifting it there would be meaningless.
+if f != 0 && SAVE_INTRINSIC_EXPONENT
+    @warn "SAVE_INTRINSIC_EXPONENT = true together with a drive f = $f: Λ + κ/2 is not the meaningful exponent on a driven attractor. Set SAVE_INTRINSIC_EXPONENT = false for driven runs."
+end
 
 # One trajectory: a random initial condition on the given energy shell, integrated with the
 # dissipative dynamics. `index` is the global index of the trajectory within its output file and is
@@ -91,11 +122,13 @@ const PATH = get(ENV, "BH_RESULTS_DIR",
         return -1.0
     end
 
-    seed = hash((parameters.J, parameters.U, parameters.κ, parameters.γ, parameters.σ, energy, index))
+    seed = hash((parameters.J, parameters.U, parameters.κ, parameters.γ, parameters.σ,
+                 parameters.Δ, parameters.f, energy, index))
 
     _, lyapunov, lyapunovs, _ = TrajectoryLyapunovDissipative(initialCondition, parameters;
         seed=seed,
         noiseStep=NOISE_STEP,
+        relaxationTime=RELAXATION_TIME,
         timeInterval=(0.0, INTEGRATION_TIME))
 
     if lyapunov == 0.0
@@ -114,12 +147,12 @@ end
 function LyapunovMap(parameters, energy, indices; initialConditionEnergyTolerance=0.0001)
     time = @elapsed result = pmap(index -> SingleTrajectory(index, energy, parameters, initialConditionEnergyTolerance), indices)
 
-    _, J, U, κ, γ, σ = parameters
+    _, J, U, κ, γ, σ, Δ, f = parameters
 
     nonzero = filter(x -> x > 0, result)
     positive = filter(x -> x > 0.001, result)
 
-    println("Finished J = $J, U = $U, κ = $κ, γ = $γ, σ = $σ, E = $energy");
+    println("Finished J = $J, U = $U, κ = $κ, γ = $γ, σ = $σ, Δ = $Δ, f = $f, E = $energy");
     println("Number of new trajectories: $(length(result)) ($(length(positive)) unstable)");
 
     if length(positive) > 0
@@ -150,14 +183,14 @@ for j in LinRange(0.0, 1.0, 51)
             trajectories = 0
         end
 
-        println("Starting J = $j, U = $U, κ = $κ, γ = $γ, σ = $σ, E = $energy");
+        println("Starting J = $j, U = $U, κ = $κ, γ = $γ, σ = $σ, Δ = $Δ, f = $f, E = $energy");
         println("Computed trajectories: $trajectories, trajectories to compute: $(TRAJECTORIES - trajectories)");
 
         if trajectories >= TRAJECTORIES
             continue
         end
 
-        parameters = DissipativeParameters((L, j, U); κ=κ, γ=γ, σ=σ)
+        parameters = DissipativeParameters((L, j, U); κ=κ, γ=γ, σ=σ, Δ=Δ, f=f)
         lyapunovs, positive = LyapunovMap(parameters, energy, (trajectories + 1):TRAJECTORIES)
 
         if length(lyapunovs) == 0
