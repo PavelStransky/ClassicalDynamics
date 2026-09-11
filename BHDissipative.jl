@@ -1,367 +1,397 @@
-# dissipative_bh_lyapunov.jl
+# BHDissipative.jl
 #
-# Classical (N → ∞) Bose–Hubbard dynamics with pump, loss and dephasing, and the
-# maximal Lyapunov exponent (Benettin algorithm), using DifferentialEquations.jl.
+# Classical (N -> infinity) dynamics of the OPEN Bose-Hubbard model - pump, loss and
+# dephasing - and the maximal Lyapunov exponent of its trajectories (Benettin algorithm).
 #
-#   dq_i = [-J Σ_{j∼i} p_j + g I_i p_i - κ/2 q_i] dt + √γd p_i ∘ dW_i
-#   dp_i = [ J Σ_{j∼i} q_j - g I_i q_i - κ/2 p_i] dt - √γd q_i ∘ dW_i     (Stratonovich)
+# Notation, phase-space layout and normalisation are those of models/BoseHubbardFull.jl and
+# BHTrajectory.jl:
 #
-#   I_i = (q_i² + p_i²)/2,   κ = γ_l - γ_p,   ψ_i = (q_i + i p_i)/√2
+#   parameters     (L, J, U), extended here to (L, J, U, κ, γ, σ) by DissipativeParameters
+#   state          x = (p, q),  x[i] = p_i,  x[i + L] = q_i,  i = 1...L  (periodic chain)
+#   deviation      x[2L + i] = δp_i,  x[2L + i + L] = δq_i   (the tangentDynamics = :vector layout)
+#   normalisation  Σ_i (p_i² + q_i²) = 2,  i.e.  Σ_i I_i = 1  with  I_i = (p_i² + q_i²) / 2
+#   amplitudes     ψ_i = (q_i + i p_i) / √2
 #
-# State vector u = [q; p; δq; δp] (length 4L): the trajectory and one tangent vector are
-# integrated together, so both automatically see the SAME noise realisation.
+# The Hamiltonian is exactly the one evaluated by Energy(x, parameters):
+#
+#   H = Σ_i [ -J (p_i p_{i+1} + q_i q_{i+1}) + (U/4) (p_i² + q_i²)² ]
+#
+# and the open-system equations of motion (Stratonovich noise, ∘ dW) read
+#
+#   dp_i = [ J (q_{i-1} + q_{i+1}) - U (p_i² + q_i²) q_i - (κ/2) p_i ] dt - √γ q_i ∘ dW_i + σ dV_i
+#   dq_i = [-J (p_{i-1} + p_{i+1}) + U (p_i² + q_i²) p_i - (κ/2) q_i ] dt + √γ p_i ∘ dW_i + σ dY_i
+#
+#   κ = γ_loss - γ_pump   net damping,  Σ_i I_i(t) = e^{-κ t} Σ_i I_i(0)
+#   γ                     dephasing rate (a random phase kick ψ_i -> e^{-i θ_i} ψ_i)
+#   σ = √((γ_loss + γ_pump) / (2N))   finite-N (truncated Wigner) additive noise, expressed in the
+#                         scaled variables above; σ = 0 is the N -> infinity limit of
+#                         BHTrajectory.jl, and σ does NOT enter the tangent equations.
+#
+# With κ = γ = σ = 0 everything below reduces to the Hamiltonian problem of BHTrajectory.jl.
 #
 # Methods
-#   :split (default) Strang splitting. The deterministic part (hopping, interaction,
-#          damping and the tangent equations) is an ODEProblem solved to tolerance; the
-#          dephasing is applied exactly, as a random rotation of every (q_i,p_i) and
-#          (δq_i,δp_i) plane, at the midpoint of each interval Δt. The norm law
-#          Σ I_i(t) = e^{-κt} Σ I_i(0) then holds to solver tolerance.
-#   :sde   SDEProblem with non-diagonal noise, solved with EulerHeun (Stratonovich).
-#          Simpler, but the norm drifts at O(Δt). Useful as a cross-check.
-#          Do NOT use Itô solvers (EM, SRIW1, SOSRI, ...) on these Stratonovich equations.
-#
-# Optional σadd = √((γ_l + γ_p)/(2N)) adds the finite-N (truncated Wigner) additive noise.
-# It does not enter the tangent equations. With κ = γd = σadd = 0 the code reduces to the
-# Hamiltonian DNLS.
+#   :split  (default) Strang splitting. The deterministic part - hopping, interaction, damping and
+#           the tangent dynamics - is an ODEProblem solved to `tolerance`; the dephasing is applied
+#           EXACTLY, as a random rotation of every (p_i, q_i) and (δp_i, δq_i) plane, by a
+#           PeriodicCallback every `noiseStep`. The norm law Σ I_i = e^{-κt} then holds to solver
+#           tolerance.
+#   :sde    SDEProblem with non-diagonal noise, solved with EulerHeun (Stratonovich). Simpler, but
+#           the norm drifts at O(noiseStep). Useful as a cross-check.
+#           Do NOT use Ito solvers (EM, SRIW1, SOSRI, ...) on these Stratonovich equations.
 
 using DifferentialEquations
 using StochasticDiffEq
-using LinearAlgebra, Random, Statistics, Printf
+using LinearAlgebra
+using Random
+using Statistics
+using Printf
 
-# ------------------------------------------------------------------------- lattice
-function chain_neighbors(L; periodic = true)
-    nbrs = [Int[] for _ in 1:L]
-    for i in 1:L-1
-        push!(nbrs[i], i + 1)
-        push!(nbrs[i+1], i)
-    end
-    if periodic && L > 2
-        push!(nbrs[1], L)
-        push!(nbrs[L], 1)
-    end
-    return nbrs
+include("models/BoseHubbardFull.jl")
+include("modules/ClassicalDynamics.jl")
+
+
+""" Bose-Hubbard parameters (L, J, U) of models/BoseHubbardFull.jl extended by the rates of the
+    three dissipative channels. The result destructures as `L, J, U = parameters`, so every
+    function of the closed model (Energy, InitialCondition, EquationOfMotionTangentVector!, ...)
+    accepts it unchanged, while κ, γ and σ stay reachable by name.
+
+    κ = γ_loss - γ_pump (net damping), γ = dephasing rate, σ = additive (finite-N) noise. """
+function DissipativeParameters(parameters; κ = 0.0, γ = 0.0, σ = 0.0)
+    L, J, U = parameters
+    return (L = L, J = float(J), U = float(U), κ = float(κ), γ = float(γ), σ = float(σ))
 end
 
-# ------------------------------------------------------- deterministic part + tangent
-function drift!(du, u, prm, t)
-    (; L, J, g, κ, nbrs) = prm
-    @inbounds for i in 1:L
-        q_i, p_i = u[i], u[L+i]
-        dq_i, dp_i = u[2L+i], u[3L+i]
-        sq = sp = sdq = sdp = 0.0
-        for j in nbrs[i]
-            sq += u[j];     sp += u[L+j]
-            sdq += u[2L+j]; sdp += u[3L+j]
+
+""" Equations of motion of the open Bose-Hubbard model together with a single deviation vector, in
+    the layout of EquationOfMotionTangentVector! (models/BoseHubbardFull.jl).
+
+    The conservative part - the trajectory and the matrix-free tangent dynamics - is taken over
+    from the closed model; the only addition is the damping -κ/2, which the linearisation
+    reproduces verbatim on the deviation vector. The dephasing and the additive noise are NOT here:
+    they are applied either exactly by DephasingCallback (method = :split) or through NoiseTerm!
+    (method = :sde). """
+function EquationOfMotionDissipative!(dx, x, parameters, t)
+    EquationOfMotionTangentVector!(dx, x, parameters, t)
+
+    κ = parameters.modelParameters.κ
+    if κ != 0
+        halfκ = 0.5 * κ
+        @inbounds @simd for i in eachindex(dx)
+            dx[i] -= halfκ * x[i]
         end
-        I = 0.5 * (q_i^2 + p_i^2)
-        c = q_i * dq_i + p_i * dp_i                      # = δI_i
-        du[i]    = -J * sp  + g * I * p_i  - 0.5κ * q_i
-        du[L+i]  =  J * sq  - g * I * q_i  - 0.5κ * p_i
-        du[2L+i] = -J * sdp + g * I * dp_i + g * p_i * c - 0.5κ * dq_i
-        du[3L+i] =  J * sdq - g * I * dq_i - g * q_i * c - 0.5κ * dp_i
     end
+
     return nothing
 end
 
-# ------------------------------------------ noise matrix for the :sde method (4L × nW)
-# Column i: dephasing on site i. Columns L+i and 2L+i: additive noise on q_i, p_i.
-function noise!(G, u, prm, t)
-    (; L, γd, σadd) = prm
-    s = sqrt(γd)
-    @inbounds for i in 1:L
-        G[i, i]    =  s * u[L+i]
-        G[L+i, i]  = -s * u[i]
-        G[2L+i, i] =  s * u[3L+i]
-        G[3L+i, i] = -s * u[2L+i]
-        if σadd > 0
-            G[i, L+i]    = σadd
-            G[L+i, 2L+i] = σadd
-        end
-    end
-    return nothing
-end
 
-# ------------------------------- exact dephasing step (+ additive noise) for :split
-function dephase_kick!(u, L, sγ, sa, rng)
-    @inbounds for i in 1:L
-        s, c = sincos(sγ * randn(rng))                   # angle √γd ΔW_i
-        q, p = u[i], u[L+i]
-        u[i]    =  c * q + s * p
-        u[L+i]  = -s * q + c * p
-        dq, dp = u[2L+i], u[3L+i]                        # same rotation on tangent
-        u[2L+i] =  c * dq + s * dp
-        u[3L+i] = -s * dq + c * dp
-        if sa > 0
-            u[i]   += sa * randn(rng)
-            u[L+i] += sa * randn(rng)
-        end
-    end
-    return nothing
-end
+""" Exact dephasing step for method = :split - a PeriodicCallback firing every `noiseStep`.
 
-# ------------------------------------------------------------------- observables
-function energy(u, prm)                                   # H_cl(q, p)
-    (; L, J, g, nbrs) = prm
-    E = 0.0
-    @inbounds for i in 1:L
-        I = 0.5 * (u[i]^2 + u[L+i]^2)
-        E += 0.5g * I^2
-        for j in nbrs[i]                                 # each bond visited twice
-            E -= 0.5J * (u[i] * u[j] + u[L+i] * u[L+j])
-        end
-    end
-    return E
-end
+    Dephasing rotates each (p_i, q_i) plane by a random angle √γ ΔW_i; the SAME rotation is applied
+    to (δp_i, δq_i), so the trajectory and the deviation vector always see one and the same noise
+    realisation. The rotation is norm-preserving, hence Σ I_i keeps decaying as e^{-κt} to solver
+    tolerance. The additive noise σ acts on the trajectory only. """
+function DephasingCallback(parameters, noiseStep, rng)
+    L = parameters.L
+    dimension = 2 * L
+    dephasingAmplitude = sqrt(parameters.γ * noiseStep)
+    additiveAmplitude = parameters.σ * sqrt(noiseStep)
 
-function _energy(ψ::AbstractVector{<:Complex}, J, g, nbrs)   # same H_cl in terms of ψ
-    E = 0.0
-    @inbounds for i in eachindex(ψ)
-        E += 0.5g * abs2(ψ[i])^2
-        for j in nbrs[i]
-            E -= J * real(conj(ψ[i]) * ψ[j])            # each bond visited twice
-        end
-    end
-    return E
-end
-energy(ψ::AbstractVector{<:Complex}, J::Real, g::Real; periodic = true) =
-    _energy(ψ, J, g, chain_neighbors(length(ψ); periodic))
+    function Dephase!(integrator)
+        x = integrator.u
 
-mutable struct LyapRecord
-    t::Vector{Float64}
-    S::Vector{Float64}       # cumulative log-stretching
-    dens::Vector{Float64}    # n(t) = Σ I_i / L
-    E::Vector{Float64}
-    Ssum::Float64
-end
-LyapRecord() = LyapRecord(Float64[], Float64[], Float64[], Float64[], 0.0)
+        @inbounds for i = 1:L
+            s, c = sincos(dephasingAmplitude * randn(rng))
 
-# Benettin step. Returns false if the run should stop.
-function renormalize!(integ, prm, rec, Δt)
-    L = prm.L
-    u = integ.u
-    v = @view u[2L+1:4L]
-    nv = norm(v)
-    rec.Ssum += log(nv)
-    v ./= nv
-    u_modified!(integ, true)
-    Imax = maximum(i -> 0.5 * (u[i]^2 + u[L+i]^2), 1:L)
-    push!(rec.t, integ.t)
-    push!(rec.S, rec.Ssum)
-    push!(rec.dens, sum(abs2, @view u[1:2L]) / (2L))
-    push!(rec.E, energy(u, prm))
-    if !isfinite(nv) || prm.g * Imax * Δt > 0.2
-        @warn "stopping at t = $(integ.t): non-finite tangent norm or g·max(I)·Δt > 0.2"
-        return false
-    end
-    return true
-end
+            p, q = x[i], x[i + L]
+            x[i] = c * p - s * q
+            x[i + L] = s * p + c * q
 
-# ------------------------------------------------------------------ main routine
-"""
-    lyapunov(ψ0, J, g; κ=0, γd=0, σadd=0, method=:split, Δt=1e-2, t_max=1e3,
-             t_renorm=1.0, seed=1, alg=Tsit5(), abstol=1e-10, reltol=1e-10, periodic=true)
+            δp, δq = x[dimension + i], x[dimension + i + L]
+            x[dimension + i] = c * δp - s * δq
+            x[dimension + i + L] = s * δp + c * δq
 
-Maximal Lyapunov exponent for initial amplitudes `ψ0` (complex, ψ = (q+ip)/√2).
-The density n = Σ|ψ0_i|²/L and the energy are set by `ψ0` (see `random_state`,
-`state_with_energy`).
-
-Time and precision:
-  t_max          total integration time
-  t_renorm       Benettin renormalisation interval = time resolution of the output
-  abstol, reltol tolerances of the ODE solver (deterministic part, :split only)
-  alg            ODE solver, e.g. Tsit5() or Vern9() for high precision
-  Δt             noise/splitting interval (:split) or EulerHeun step (:sde); must divide
-                 `t_renorm`. Without noise it is only used for the resolution check.
-`seed` must be ≥ 1 (seed 0 means "random" in StochasticDiffEq).
-
-Returns a NamedTuple with `t`, `S`, `λ = S/t`, `λ_shifted = λ + κ/2`, `dens`, `E`,
-and the initial energy `E0` and density `n0`.
-For κ ≠ 0 use windowed exponents, see `window_lambda`.
-"""
-function lyapunov(ψ0::AbstractVector{<:Complex}, J::Real, g::Real;
-                  κ = 0.0, γd = 0.0, σadd = 0.0, method::Symbol = :split,
-                  Δt = 1e-2, t_max = 1e3, t_renorm = 1.0, seed::Integer = 1,
-                  alg = Tsit5(), abstol = 1e-10, reltol = 1e-10, periodic = true)
-    L = length(ψ0)
-    nsub = round(Int, t_renorm / Δt)
-    nwin = round(Int, t_max / t_renorm)
-    @assert nsub * Δt ≈ t_renorm "t_renorm must be a multiple of Δt"
-    @assert seed ≥ 1
-    prm = (L = L, J = float(J), g = float(g), κ = float(κ), γd = float(γd),
-           σadd = float(σadd), nbrs = chain_neighbors(L; periodic))
-    rng = Xoshiro(seed)
-    v0 = randn(rng, 2L)
-    v0 ./= norm(v0)
-    u0 = vcat(sqrt(2) .* real.(ψ0), sqrt(2) .* imag.(ψ0), v0)
-    tspan = (0.0, 2.0 * t_max)            # margin; the run is driven by step! below
-    rec = LyapRecord()
-    noisy = γd > 0 || σadd > 0
-
-    if method === :sde && noisy
-        nW = σadd > 0 ? 3L : L
-        prob = SDEProblem(drift!, noise!, u0, tspan, prm;
-                          noise_rate_prototype = zeros(4L, nW))
-        integ = init(prob, EulerHeun(); dt = Δt, seed = UInt64(seed),
-                     save_everystep = false, maxiters = 10^12)
-        for _ in 1:nwin
-            step!(integ, t_renorm, true)
-            renormalize!(integ, prm, rec, Δt) || break
-        end
-    elseif method === :split || !noisy
-        prob = ODEProblem(drift!, u0, tspan, prm)
-        integ = init(prob, alg; abstol, reltol, save_everystep = false,
-                     maxiters = 10^12)
-        sγ, sa = sqrt(γd * Δt), σadd * sqrt(Δt)
-        for _ in 1:nwin
-            if noisy
-                for _ in 1:nsub          # Strang: half flow, exact noise, half flow
-                    step!(integ, Δt / 2, true)
-                    dephase_kick!(integ.u, L, sγ, sa, rng)
-                    u_modified!(integ, true)
-                    step!(integ, Δt / 2, true)
-                end
-            else
-                step!(integ, t_renorm, true)
+            if additiveAmplitude > 0
+                x[i] += additiveAmplitude * randn(rng)
+                x[i + L] += additiveAmplitude * randn(rng)
             end
-            renormalize!(integ, prm, rec, Δt) || break
         end
+
+        u_modified!(integrator, true)
+    end
+
+    return PeriodicCallback(Dephase!, float(noiseStep); save_positions=(false, false))
+end
+
+
+""" Noise term (the matrix G of dx = f dt + G ∘ dW) for method = :sde.
+    Column i is the dephasing on site i, columns L + i and 2L + i the additive noise on p_i and q_i
+    (present only when σ > 0). Entries that are never written stay zero. """
+function NoiseTerm!(G, x, parameters, t)
+    L, J, U, κ, γ, σ = parameters.modelParameters
+    dimension = 2 * L
+    dephasingAmplitude = sqrt(γ)
+
+    @inbounds for i = 1:L
+        G[i, i] = -dephasingAmplitude * x[i + L]
+        G[i + L, i] = dephasingAmplitude * x[i]
+        G[dimension + i, i] = -dephasingAmplitude * x[dimension + i + L]
+        G[dimension + i + L, i] = dephasingAmplitude * x[dimension + i]
+
+        if σ > 0
+            G[i, L + i] = σ
+            G[i + L, 2 * L + i] = σ
+        end
+    end
+
+    return nothing
+end
+
+
+""" Non-mutating reader for the SavingCallback that records the energy and the total number of
+    bosons Σ I_i - neither of which is conserved any more. """
+function EnergyNorm(x, t, integrator)
+    dimension = integrator.p.dimension
+    return (Energy(x, integrator.p.modelParameters), 0.5 * sum(abs2, @view x[1:dimension]))
+end
+
+
+""" Calculates the largest Lyapunov exponent of an individual trajectory of the OPEN Bose-Hubbard
+    model. The dissipative counterpart of TrajectoryLyapunov(...; tangentDynamics = :vector) from
+    modules/ClassicalDynamics.jl, with which it shares the phase-space layout, the integration
+    parameters and all the callbacks.
+
+    Because neither the energy nor the norm is conserved, no ManifoldProjection and no Poincaré
+    section are used, and the convergence test is switched off by default (regularThreshold =
+    relativeFluctuationThreshold = 0), so the trajectory is always integrated over the whole
+    `timeInterval`.
+
+    method          :split (Strang splitting, exact dephasing - default) or :sde (EulerHeun)
+    noiseStep       splitting interval (:split) or the fixed EulerHeun step (:sde)
+    saveStep        how often the deviation vector is renormalised = resolution of the output
+    relaxationTime  the exponent is accumulated only after this time (0 gives Λ = Σ log(growth) / t)
+    seed            seed of the noise; identical seeds give identical realisations
+
+    Returns - the solution, the Lyapunov exponent Λ [the damping contributes exactly -κ/2 to it, so
+              Λ + κ/2 is the intrinsic exponent], the SavedValues of the running exponent and the
+              SavedValues of (energy, norm). """
+function TrajectoryLyapunovDissipative(initialCondition, parameters;
+        method = :split,
+        solver = DP8(),                     # deterministic solver of the :split method
+        stochasticSolver = EulerHeun(),     # Stratonovich solver of the :sde method
+        noiseStep = 1e-2,
+        seed = 1,
+        timeInterval = (0.0, 1e3),
+        saveStep = 2,
+        relaxationTime = 0,
+        tolerance = 1e-10,
+        maximumIterations = 2E6,
+        timeout = 0,
+        regularThreshold = 0,
+        relativeFluctuationThreshold = 0,
+        historyLyapunovExponentLength = 500,
+        showFigures = false,
+        savePath = nothing
+    )
+
+    L, J, U, κ, γ, σ = parameters
+    phaseSpaceDimension = length(initialCondition)          # = 2L
+    rng = Xoshiro(seed)
+
+    # Initial condition + a single normalised deviation vector (Benettin method), i.e. exactly the
+    # layout expected by EquationOfMotionTangentVector!
+    x0 = zeros(2 * phaseSpaceDimension)
+    x0[1:phaseSpaceDimension] = initialCondition
+    deviation = @view x0[(phaseSpaceDimension + 1):end]
+    deviation .= randn(rng, phaseSpaceDimension)
+    deviation ./= sqrt(sum(abs2, deviation))
+
+    energy = Energy(x0, parameters)
+    norm0 = 0.5 * sum(abs2, @view x0[1:phaseSpaceDimension])
+
+    noisy = γ > 0 || σ > 0
+    if noisy
+        maximumI = maximum(i -> 0.5 * (x0[i]^2 + x0[i + L]^2), 1:L)
+        phaseAdvance = 2 * U * maximumI * noiseStep         # nonlinear phase advance per noise step
+        if phaseAdvance > 0.2
+            @warn "noiseStep = $noiseStep is too coarse: the nonlinear phase advance per step 2 U max(I) noiseStep = $phaseAdvance exceeds 0.2"
+        end
+    end
+
+    # maximumSectionPoints = 0 -> no Poincaré section, the stopping decision is taken in AccumulateLyapunov!
+    integrationParameters = LyapunovIntegrationParameters(phaseSpaceDimension, parameters, energy, relaxationTime,
+        relativeFluctuationThreshold, regularThreshold, 0, 0, time_ns(), 1E9 * timeout, :Start,
+        0.0, norm0, historyLyapunovExponentLength, Float64[])
+
+    lyapunovs = SavedValues(Float64, Float64)               # The whole history of the immediate Lyapunov exponents (for a graph)
+    observables = SavedValues(Float64, Tuple{Float64, Float64})     # Energy and norm, neither of them conserved
+
+    rescale = PeriodicCallback(RescaleDeviationVector!, float(saveStep); save_positions=(false, false))
+    record = SavingCallback(RunningLyapunov, lyapunovs, saveat=saveStep:saveStep:last(timeInterval))
+    recordObservables = SavingCallback(EnergyNorm, observables, saveat=saveStep:saveStep:last(timeInterval))
+    timeoutCallback = DiscreteCallback(TimeoutCondition, terminate!)
+
+    if method === :split || !noisy
+        callback = noisy ?
+            CallbackSet(DephasingCallback(parameters, noiseStep, rng), rescale, record, recordObservables, timeoutCallback) :
+            CallbackSet(rescale, record, recordObservables, timeoutCallback)
+
+        problem = ODEProblem(ODEFunction(EquationOfMotionDissipative!), x0, timeInterval, integrationParameters)
+        time = @elapsed solution = solve(problem, solver, reltol=tolerance, abstol=tolerance, callback=callback,
+            save_on=true, save_everystep=false, save_start=true, save_end=true, maxiters=maximumIterations,
+            isoutofdomain=CheckDomain, verbose=DEVerbosity())
+    elseif method === :sde
+        numberOfNoiseProcesses = σ > 0 ? 3 * L : L
+        callback = CallbackSet(rescale, record, recordObservables, timeoutCallback)
+
+        problem = SDEProblem(EquationOfMotionDissipative!, NoiseTerm!, x0, float.(timeInterval), integrationParameters;
+            noise_rate_prototype = zeros(2 * phaseSpaceDimension, numberOfNoiseProcesses))
+        time = @elapsed solution = solve(problem, stochasticSolver, dt=noiseStep, adaptive=false, seed=UInt64(seed),
+            callback=callback, save_everystep=false, save_start=true, save_end=true, maxiters=maximumIterations)
     else
         error("method must be :split or :sde")
     end
-    λ = rec.S ./ rec.t
-    return (t = rec.t, S = rec.S, λ = λ, λ_shifted = λ .+ κ / 2,
-            dens = rec.dens, E = rec.E,
-            E0 = energy(u0, prm), n0 = sum(abs2, ψ0) / L)
-end
 
-# Finite-time exponent on the window [t1, t2].
-function window_lambda(res, t1, t2)
-    i1 = searchsortedfirst(res.t, t1)
-    i2 = searchsortedlast(res.t, t2)
-    return (res.S[i2] - res.S[i1]) / (res.t[i2] - res.t[i1])
-end
+    # Get results - average over the trailing window of running-exponent samples (empty -> exactly 0)
+    history = integrationParameters.historyLyapunovExponent
+    window = @view history[max(1, length(history) - historyLyapunovExponentLength + 1):end]
+    lyapunov = isempty(window) ? 0.0 : mean(window)
+    lv = length(window) > 1 ? var(window) : 0.0
 
-# Uniform on the norm shell Σ|ψ_i|² = nL (the long-time state produced by dephasing).
-function random_state(L, n; rng = Random.default_rng())
-    z = randn(rng, ComplexF64, L)
-    return z .* (sqrt(n * L) / norm(z))
-end
+    # Print result
+    if length(solution.u) > 0
+        finalState = solution.u[end]
+        finalNorm = 0.5 * sum(abs2, @view finalState[1:phaseSpaceDimension])
+        @info "Calculation time = $time, Trajectory time = $(solution.t[end]), Final energy = $(Energy(finalState, parameters)), Final norm = $finalNorm, Λ = $lyapunov ± $lv, Λ + κ/2 = $(lyapunov + 0.5 * κ)"
+    end
 
-# Norm-preserving gradient flow of H_cl on the sphere Σ|ψ_i|² = Nrm², up or down in
-# energy, until E_target is reached.
-function _energy_flow(ψ0, E_target, J, g, nbrs, Nrm, tol, maxiter)
-    ψ = ψ0 .* (Nrm / norm(ψ0))
-    G = similar(ψ)
-    E = _energy(ψ, J, g, nbrs)
-    for _ in 1:maxiter
-        abs(E - E_target) < tol * max(1, abs(E_target)) && return ψ
-        for i in eachindex(ψ)                            # G = ∂H/∂ψ_i*
-            G[i] = g * abs2(ψ[i]) * ψ[i]
-            for j in nbrs[i]
-                G[i] -= J * ψ[j]
+    @debug "retcode = $(solution.retcode), result = $(integrationParameters.result)"
+
+    # Save all unstable or nonconvergent trajectories (for debug reasons)
+    if !(solution.retcode == DiffEqBase.ReturnCode.Success ||
+         (solution.retcode == DiffEqBase.ReturnCode.Terminated && integrationParameters.result == :Converged))
+        if !isnothing(savePath)
+            open(savePath * "Nonconvergent_Trajectories.txt", "a") do io
+                println(io, "$parameters\t$energy\t$initialCondition\t$(solution.retcode)")
             end
         end
-        G .-= (real(dot(ψ, G)) / real(dot(ψ, ψ))) .* ψ    # tangent to the norm sphere
-        G2 = real(dot(G, G))
-        G2 < 1e-24 && error("gradient flow reached a stationary state at E = $E; " *
-                            "E_target = $E_target is outside the reachable range")
-        η = min(0.05 / (2J + abs(g) * maximum(abs2, ψ)), abs(E - E_target) / (2 * G2))
-        ψ .+= sign(E_target - E) * η .* G
-        ψ .*= Nrm / norm(ψ)
-        E = _energy(ψ, J, g, nbrs)
+
+        @info "Nonconvergent trajectory with initialCondition = $initialCondition: retcode = $(solution.retcode), result = $(integrationParameters.result)"
+        return solution, 0.0, lyapunovs, observables
     end
-    error("energy flow did not converge")
-end
 
-"""
-    state_with_energy(L, n, E_target, J, g; rng, tol=1e-10, periodic=true)
+    if showFigures
+        panel1 = plot(lyapunovs.t, lyapunovs.saveval, lw=2, title="Λ = $lyapunov ± $lv", label=nothing, xlabel="t", ylabel="Λ")
+        panel2 = plot(observables.t, last.(observables.saveval), lw=2, label="Σ I", xlabel="t")
+        panel2 = plot!(panel2, observables.t, first.(observables.saveval), lw=2, label="E")
+        figure = plot(panel1, panel2, layout=2)
+        display(figure)
 
-State with Σ|ψ_i|² = nL and H_cl = E_target (relative accuracy `tol`).
-  * E(uniform) ≤ E_target ≤ E(random): bisection along ψ(s) ∝ (1-s)·uniform + s·random,
-    i.e. the uniform (ground) state dressed with random fluctuations of all modes;
-  * E_target > E(random): gradient ascent from the random state;
-  * E_target < E(uniform): gradient descent from the uniform state (open chains, g < 0).
-Errors if E_target lies outside the reachable energy range.
-"""
-function state_with_energy(L, n, E_target, J, g; rng = Random.default_rng(),
-                           tol = 1e-10, maxiter = 10^6, periodic = true)
-    nbrs = chain_neighbors(L; periodic)
-    Nrm = sqrt(n * L)
-    z = random_state(L, n; rng)
-    u = fill(complex(sqrt(float(n))), L)
-    Ez, Eu = _energy(z, J, g, nbrs), _energy(u, J, g, nbrs)
-    if E_target >= Ez
-        return _energy_flow(z, E_target, J, g, nbrs, Nrm, tol, maxiter)
-    elseif E_target >= Eu
-        mix = s -> begin
-            ψ = (1 - s) .* u .+ s .* z
-            ψ .* (Nrm / norm(ψ))
+        if !isnothing(savePath)
+            savefig(figure, savePath * "$initialCondition.png")
         end
-        lo, hi = 0.0, 1.0                               # E(lo) ≤ E_target ≤ E(hi)
-        for _ in 1:200
-            mid = (lo + hi) / 2
-            Em = _energy(mix(mid), J, g, nbrs)
-            abs(Em - E_target) < tol * max(1, abs(E_target)) && return mix(mid)
-            Em < E_target ? (lo = mid) : (hi = mid)
-        end
-        return mix((lo + hi) / 2)
-    else
-        return _energy_flow(u .+ 1e-3 .* z, E_target, J, g, nbrs, Nrm, tol, maxiter)
     end
+
+    return solution, lyapunov, lyapunovs, observables
 end
 
-# Mean and standard error of λ(t_max) over noise realisations (threaded).
-function ensemble_lambda(make_ψ0, J, g; seeds = 1:8, kwargs...)
-    λs = zeros(length(seeds))
-    Threads.@threads for k in eachindex(seeds)
-        res = lyapunov(make_ψ0(seeds[k]), J, g; seed = seeds[k], kwargs...)
-        λs[k] = res.λ[end]
+
+""" Finite-time Lyapunov exponent on the window [t1, t2], reconstructed from the running exponents
+    saved by TrajectoryLyapunovDissipative. For κ ≠ 0 the density decays, the trajectory becomes
+    less and less nonlinear and the exponent drifts, so windowed exponents are more informative
+    than the global average. """
+function WindowLyapunov(lyapunovs, t1, t2; relaxationTime = 0)
+    i1 = searchsortedfirst(lyapunovs.t, t1)
+    i2 = searchsortedlast(lyapunovs.t, t2)
+
+    if i1 >= i2 || i2 > length(lyapunovs.t)
+        return 0.0
     end
-    return mean(λs), std(λs) / sqrt(length(λs))
+
+    # saveval = Σ log(growth) / (t - relaxationTime), so the cumulative stretching is recovered back
+    stretching1 = lyapunovs.saveval[i1] * (lyapunovs.t[i1] - relaxationTime)
+    stretching2 = lyapunovs.saveval[i2] * (lyapunovs.t[i2] - relaxationTime)
+
+    return (stretching2 - stretching1) / (lyapunovs.t[i2] - lyapunovs.t[i1])
 end
 
-# ------------------------------------------------------------------ demo / checks
-function demo()
-    # n = Σ|ψ_i|²/L is the classical density; only the combination g·n/J matters.
-    L, J, g, n = 4, 0.5, 2.0, 1.0
-    ψ0 = random_state(L, n; rng = Xoshiro(1))
-    n0 = sum(abs2, ψ0) / L
-    normerr(r, κ) = maximum(abs.(r.dens ./ (n0 .* exp.(-κ .* r.t)) .- 1))
 
-    @printf("E(ψ0) = %.3f   [ground state: %.3f,  ⟨E⟩ at T=∞: %.3f]\n",
-            energy(ψ0, J, g), -2J * n * L + g * n^2 * L / 2, g * n^2 * L^2 / (L + 1))
+""" Mean and standard error of the Lyapunov exponent over independent noise realisations (threaded).
+    `initialCondition` is either a fixed phase-space point or a function seed -> point. """
+function EnsembleLyapunov(initialCondition, parameters; seeds = 1:8, kwargs...)
+    lyapunovs = zeros(Float64, length(seeds))
 
-    r = lyapunov(ψ0, J, g; t_max = 500)
-    @printf("Hamiltonian:          λ = %+.4f   rel. energy drift = %.1e   norm err = %.1e\n",
-            r.λ[end], maximum(abs.(r.E .- r.E[1])) / abs(r.E[1]), normerr(r, 0.0))
-
-    ψlow = state_with_energy(L, n, 0.0, J, g; rng = Xoshiro(2))   # prescribed energy
-    r = lyapunov(ψlow, J, g; t_max = 500)
-    @printf("Hamiltonian, E0 = %.2f: λ = %+.4f\n", r.E0, r.λ[end])
-
-    for m in (:split, :sde)
-        r = lyapunov(ψ0, J, g; γd = 0.1, method = m, Δt = 5e-3, t_max = 1000)
-        @printf("γd = 0.1, %-6s:       λ = %+.4f   norm err = %.1e\n", string(m), r.λ[end], normerr(r, 0.0))
+    Threads.@threads for i in eachindex(seeds)
+        x = initialCondition isa Function ? initialCondition(seeds[i]) : initialCondition
+        lyapunovs[i] = TrajectoryLyapunovDissipative(x, parameters; seed=seeds[i], kwargs...)[2]
     end
 
-    r = lyapunov(ψ0, J, 0.0; κ = 0.3, γd = 0.5, t_max = 50)
-    @printf("g = 0, κ = 0.3:       λ = %+.6f   (exact: -κ/2 = -0.15)\n", r.λ[end])
+    return mean(lyapunovs), std(lyapunovs) / sqrt(length(lyapunovs))
+end
 
+
+""" Demonstration of all the dissipative channels, together with the consistency checks of the
+    integration (energy drift, norm law, the exactly known exponent of the linear model). """
+function Demo()
+    Random.seed!(1234)
+
+    bhParameters = (5, 0.5, 1)                  # (L, J, U), the model of BHTrajectory.jl
+    energy = 0.4
+    timeInterval = (0.0, 1000.0)
+
+    initialCondition = InitialCondition(energy, bhParameters, 1e-3)
+
+    if initialCondition === nothing
+        println("No initial condition found")
+        return
+    end
+
+    @printf("L = %d, J = %.2f, U = %.2f:  E = %+.4f, Σ I = %.4f\n", bhParameters[1], bhParameters[2], bhParameters[3],
+        Energy(initialCondition, bhParameters), 0.5 * sum(abs2, initialCondition))
+
+    energies(observables) = first.(observables.saveval)
+    energyDrift(observables) = maximum(abs.(energies(observables) .- energies(observables)[1])) / abs(energies(observables)[1])
+    normError(observables, κ) = maximum(abs.(last.(observables.saveval) ./ exp.(-κ .* observables.t) .- 1))
+
+    # 1. Hamiltonian limit: κ = γ = σ = 0 reproduces BHTrajectory.jl (without the manifold projection)
+    parameters = DissipativeParameters(bhParameters)
+    _, lyapunov, _, observables = TrajectoryLyapunovDissipative(initialCondition, parameters; timeInterval=timeInterval)
+    @printf("Hamiltonian:          Λ = %+.4f   rel. energy drift = %.1e   norm err = %.1e\n",
+        lyapunov, energyDrift(observables), normError(observables, 0.0))
+
+    # 2. Dephasing only - the norm is preserved and the two methods have to agree
+    for method in (:split, :sde)
+        parameters = DissipativeParameters(bhParameters; γ=0.1)
+        _, lyapunov, _, observables = TrajectoryLyapunovDissipative(initialCondition, parameters;
+            method=method, noiseStep=5e-3, timeInterval=timeInterval)
+        @printf("γ = 0.1, %-6s:       Λ = %+.4f   norm err = %.1e\n", string(method), lyapunov, normError(observables, 0.0))
+    end
+
+    # 3. U = 0 - the dynamics is linear, the damping alone gives Λ = -κ/2 exactly
+    parameters = DissipativeParameters((bhParameters[1], bhParameters[2], 0.0); κ=0.3, γ=0.5)
+    _, lyapunov, _, _ = TrajectoryLyapunovDissipative(initialCondition, parameters; timeInterval=(0.0, 50.0))
+    @printf("U = 0, κ = 0.3:       Λ = %+.6f   (exact: -κ/2 = -0.15)\n", lyapunov)
+
+    # 4. Net damping - the density decays, so windowed exponents are used instead of the average
     κ = 0.02
-    r = lyapunov(ψ0, J, g; κ, t_max = 1000)
+    parameters = DissipativeParameters(bhParameters; κ=κ)
+    _, _, lyapunovs, observables = TrajectoryLyapunovDissipative(initialCondition, parameters; timeInterval=(0.0, 1000.0))
     println("κ = $κ, finite-time exponents on time windows [t1, t2]:")
-    for (t1, t2) in ((1, 50), (100, 150), (250, 300), (500, 1000))
-        λw = window_lambda(r, t1, t2)
-        nw = mean(r.dens[(r.t .>= t1) .& (r.t .<= t2)])
-        @printf("   [%3d,%3d]:  λ = %+.3f   λ+κ/2 = %+.3f   ⟨n⟩ = %.3f\n", t1, t2, λw, λw + κ / 2, nw)
+    for (t1, t2) in ((2, 50), (100, 150), (250, 300), (500, 1000))
+        windowLyapunov = WindowLyapunov(lyapunovs, t1, t2)
+        norms = last.(observables.saveval)[(observables.t .>= t1) .& (observables.t .<= t2)]
+        @printf("   [%4d,%4d]:  Λ = %+.3f   Λ + κ/2 = %+.3f   ⟨Σ I⟩ = %.3f\n",
+            t1, t2, windowLyapunov, windowLyapunov + κ / 2, mean(norms))
     end
 
-    m, se = ensemble_lambda(s -> random_state(L, n; rng = Xoshiro(s)), J, g;
-                            γd = 0.1, t_max = 300, seeds = 1:4)
-    @printf("ensemble, γd = 0.1:   λ = %.3f ± %.3f\n", m, se)
+    # 5. Average over independent noise realisations
+    parameters = DissipativeParameters(bhParameters; γ=0.1)
+    meanLyapunov, errorLyapunov = EnsembleLyapunov(initialCondition, parameters; seeds=1:4, timeInterval=(0.0, 300.0))
+    @printf("ensemble, γ = 0.1:    Λ = %.3f ± %.3f\n", meanLyapunov, errorLyapunov)
 end
 
+# Runs only when the file is executed directly (julia BHDissipative.jl), so that
+# include("BHDissipative.jl") from BHMapDissipative.jl and friends stays silent.
 if abspath(PROGRAM_FILE) == @__FILE__
-    demo()
+    Demo()
 end
