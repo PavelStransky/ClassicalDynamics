@@ -65,8 +65,8 @@ TOLERANCE_LAMBDA = 0.05
 TOLERANCE_NORM = 0.05
 
 # Grid of BHMapDrivenDissipative.jl
-minDelta, maxDelta, numDelta = 0.0, 6.0, 61
-minF, maxF, numF = 0.0, 5.5, 56
+minDelta, maxDelta, numDelta = 0.0, 6.0, 241
+minF, maxF, numF = 0.0, 6.0, 241
 
 PATH = f"c:/Users/micro/results/bh/driven/{L}/J_{J:.3f}_g_{G:.3f}_k_{KAPPA:.3f}/"
 

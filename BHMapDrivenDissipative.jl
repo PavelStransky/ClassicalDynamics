@@ -106,8 +106,8 @@ const σ = 0.0                   # finite-N additive noise
 # +0.71, and it dies out by f = 5.5 everywhere in this Δ range. Δ ∈ [0, 6] × f ∈ [0, 5.5] therefore
 # holds the whole tongue up to Δ = 6 (upper fold 4.031) together with the chaotic band and a margin
 # above it, at a 0.1 step in both directions.
-@everywhere const DELTA_VALUES = LinRange(0.0, 6.0, 61)
-@everywhere const F_VALUES = LinRange(0.0, 5.5, 56)
+@everywhere const DELTA_VALUES = LinRange(0.0, 6.0, 241)
+@everywhere const F_VALUES = LinRange(0.0, 6.0, 241)
 @everywhere const DELTA_STEP = step(DELTA_VALUES)
 @everywhere const F_STEP = step(F_VALUES)
 
@@ -128,7 +128,7 @@ const σ = 0.0                   # finite-N additive noise
 # Caveat: with JITTER > 0 the trajectories of one cell no longer share the same parameters, so the
 # attractor count of analyse_map_driven.py mixes genuine multistability with the variation across
 # the cell. Set JITTER = 0 when that particular map is what you are after.
-@everywhere const JITTER = 1.0
+@everywhere const JITTER = 0.0
 
 # Splitting interval of the dephasing; only used when γ > 0 or σ > 0. Accuracy needs
 # 2 U max(I) noiseStep < 0.2, and under driving max(I) is bounded by the absorbing ball rather than
