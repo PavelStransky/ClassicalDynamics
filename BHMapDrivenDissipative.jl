@@ -57,7 +57,7 @@ using Printf
 # NaN - there is no "-1 = no initial condition" case here, since no energy shell has to be hit. In
 # numpy: data = np.loadtxt(...); lambdas = data[:, 0]; chaotic = lambdas > threshold.
 
-workers = 10
+workers = 25
 
 if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
@@ -78,7 +78,7 @@ const TRAJECTORIES = 500        # random initial conditions per (Δ, f) point; t
 const L = 3                     # allowed modes are k = 2πm/3 only, i.e. k = 0 and a doubly
                                 # degenerate k = 2π/3; k = π does not exist on an odd ring. Chaos
                                 # survives that (Λ up to +0.71 at these constants)
-const J = -1.0
+const J = -0.5
 const g = 2.0                  # the note's g; BHDissipative.jl takes U = g/2. J g < 0 is required
 const U = g / 2
 
