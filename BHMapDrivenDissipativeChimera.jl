@@ -93,7 +93,7 @@ const TRAJECTORIES = 500        # random initial conditions per (Δ, f) point; t
 const L = 3                     # allowed modes are k = 2πm/3 only, i.e. k = 0 and a doubly
                                 # degenerate k = 2π/3; k = π does not exist on an odd ring. Chaos
                                 # survives that (Λ up to +0.71 at these constants)
-const J = -0.5
+const J = -1.0
 const g = 2.0                  # the note's g; BHDissipative.jl takes U = g/2. J g < 0 is required
 const U = g / 2
 
@@ -122,8 +122,8 @@ const CHAOS_THRESHOLD = 0.01
 # Kept as LinRanges (not collected): indexing them yields exactly the values the `for Δ in
 # DELTA_VALUES` loop of BHMapDrivenDissipative.jl iterates over, and with them the same file names
 # and seeds.
-const DELTA_VALUES = LinRange(0.0, 6.0, 241)
-const F_VALUES = LinRange(0.0, 6.0, 241)
+const DELTA_VALUES = LinRange(0.0, 10.0, 501)
+const F_VALUES = LinRange(0.0, 7.0, 351)
 const DELTA_STEP = step(DELTA_VALUES)
 const F_STEP = step(F_VALUES)
 
@@ -144,7 +144,7 @@ const F_STEP = step(F_VALUES)
 # Caveat: with JITTER > 0 the trajectories of one cell no longer share the same parameters, so the
 # attractor count of analyse_map_driven.py mixes genuine multistability with the variation across
 # the cell. Set JITTER = 0 when that particular map is what you are after.
-const JITTER = 0.0
+const JITTER = 1.0
 
 # Splitting interval of the dephasing; only used when γ > 0 or σ > 0. Accuracy needs
 # 2 U max(I) noiseStep < 0.2, and under driving max(I) is bounded by the absorbing ball rather than
@@ -254,7 +254,7 @@ end
 
 # One SLURM array task computes a contiguous block of at most CELLS_PER_TASK cells from the
 # flattened (Δ, f) grid.
-const CELLS_PER_TASK = 10
+const CELLS_PER_TASK = 20
 
 const N_F = length(F_VALUES)
 const TOTAL_CELLS = length(DELTA_VALUES) * N_F
