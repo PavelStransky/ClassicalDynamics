@@ -122,8 +122,8 @@ const CHAOS_THRESHOLD = 0.01
 # Kept as LinRanges (not collected): indexing them yields exactly the values the `for Δ in
 # DELTA_VALUES` loop of BHMapDrivenDissipative.jl iterates over, and with them the same file names
 # and seeds.
-const DELTA_VALUES = LinRange(0.0, 10.0, 501)
-const F_VALUES = LinRange(0.0, 7.0, 351)
+const DELTA_VALUES = LinRange(0.5, 2.5, 401)
+const F_VALUES = LinRange(0.5, 1.5, 501)
 const DELTA_STEP = step(DELTA_VALUES)
 const F_STEP = step(F_VALUES)
 
@@ -254,7 +254,7 @@ end
 
 # One SLURM array task computes a contiguous block of at most CELLS_PER_TASK cells from the
 # flattened (Δ, f) grid.
-const CELLS_PER_TASK = 20
+const CELLS_PER_TASK = 50
 
 const N_F = length(F_VALUES)
 const TOTAL_CELLS = length(DELTA_VALUES) * N_F
