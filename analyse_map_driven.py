@@ -33,12 +33,13 @@ variation across the cell - set JITTER = 0 if that map is what you want.
 
 The overlay plays the role that the stationary-point CSV plays in analyse_map.py: instead of
 ESQPT lines it draws the analytic structure of bh_dissipation_driving.md - the fold (saddle-node)
-tongue of sec. 4 and the linear-instability boundary of sec. 5 - both in closed form, so no CSV
+tongue of sec. 4 and the modulational-instability boundary of sec. 5 - both in closed form, so no CSV
 is needed.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import TwoSlopeNorm
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -46,6 +47,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 FIGSIZE = (9.2, 6.4)
 
 CMAP = plt.get_cmap("viridis").copy()
+# CMAP = plt.get_cmap("gist_rainbow").copy()
 CMAP.set_bad(color="white")
 
 # Must match the constants of BHMapDrivenDissipative.jl
@@ -65,12 +67,12 @@ TOLERANCE_LAMBDA = 0.05
 TOLERANCE_NORM = 0.05
 
 # Grid of BHMapDrivenDissipative.jl
-minDelta, maxDelta, numDelta = 0.0, 6.0, 241
-minF, maxF, numF = 0.0, 6.0, 241
+minDelta, maxDelta, numDelta = 0.5, 2.5, 401
+minF, maxF, numF = 0.5, 1.5, 501
 
 PATH = f"c:/Users/micro/results/bh/driven/{L}/J_{J:.3f}_g_{G:.3f}_k_{KAPPA:.3f}/"
 
-STEM = f"driven_{L}"
+STEM = f"driven_detail_{L}"
 
 deltas = np.linspace(minDelta, maxDelta, numDelta)
 fs = np.linspace(minF, maxF, numF)
@@ -166,15 +168,17 @@ def fold_curves(delta):
     return lower, upper
 
 
-def uniform_growth_rate(delta, f):
-    """Largest Bogoliubov exponent over every uniform state at (Delta, f) and every allowed k,
+def modulational_growth_rate(delta, f):
+    """Largest modulational-instability exponent at (Delta, f), note sec. 5:
 
         lambda_k = -kappa/2 + sqrt(g^2 n^2 - A_k^2),  A_k = eps_k - Delta + 2 g n,
         eps_k = 2 J (1 - cos k),  k = 2 pi m / L,
 
-    with n running over the real positive roots of the state equation (note sec. 5). Positive
-    means some uniform state is linearly unstable, so the zero contour is the onset of pattern
-    formation."""
+    with n running over the real positive roots of the state equation. MI means a k != 0 mode
+    grows while k = 0 is stable, so only states with lambda_0 <= 0 enter, and for them only
+    m >= 1; the middle branch, unstable at k = 0, is the saddle of the fold, not MI. Positive
+    means at least one uniform state is modulationally unstable (a stable one may coexist), so the
+    zero contour is the onset of pattern formation."""
     roots = np.roots([G ** 2, -2 * G * delta, delta ** 2 + KAPPA ** 2 / 4, -f ** 2])
 
     largest = np.nan
@@ -183,23 +187,29 @@ def uniform_growth_rate(delta, f):
             continue
 
         n = root.real
+        rates = []
         for m in range(L):
             A = 2 * J * (1 - np.cos(2 * np.pi * m / L)) - delta + 2 * G * n
             radicand = G ** 2 * n ** 2 - A ** 2
-            rate = -KAPPA / 2 + (np.sqrt(radicand) if radicand > 0 else 0.0)
+            rates.append(-KAPPA / 2 + (np.sqrt(radicand) if radicand > 0 else 0.0))
 
-            if np.isnan(largest) or rate > largest:
-                largest = rate
+        # k = 0 unstable: the saddle branch of the S-curve
+        if rates[0] > 0:
+            continue
+
+        rate = max(rates[1:])
+        if np.isnan(largest) or rate > largest:
+            largest = rate
 
     return largest
 
 
-growth = np.array([[uniform_growth_rate(d, f) for f in fs] for d in deltas])
+growth = np.array([[modulational_growth_rate(d, f) for f in fs] for d in deltas])
 
 
 def PlotAnalytics(ax=None, add_legend=True):
     """Overlay the closed-form structure of the note: the fold tongue of sec. 4 and the
-    linear-instability boundary of sec. 5."""
+    modulational-instability boundary of sec. 5."""
     if ax is None:
         ax = plt.gca()
 
@@ -236,11 +246,29 @@ def PlotMap(values, label, title, name, cmap=CMAP, vmin=None, vmax=None):
     plt.savefig(f"{name}_{STEM}.pdf")
     plt.show()
 
+def PlotMapLyapunov(values, label, title, name):
+    """Colormesh of `values` over the (Delta, f) plane with the analytic curves on top, saved as
+    name_STEM.png / .pdf."""
+    plt.figure(figsize=FIGSIZE)
+    norm = TwoSlopeNorm(vmin=-0.5, vcenter=0.0, vmax=3.0)
+    plt.pcolormesh(deltas, fs, np.transpose(values), cmap='seismic', shading="auto",
+                   norm=norm)
+    plt.colorbar(label=label)
+    PlotAnalytics()
+    plt.title(f"{title}, L = {L}, J = {J:g}, g = {G:g}, $\\kappa$ = {KAPPA:g}")
+    plt.xlabel("$\\Delta$")
+    plt.ylabel("f")
+    plt.xlim(deltas[0], deltas[-1])
+    plt.ylim(fs[0], fs[-1])
+    plt.tight_layout()
+    plt.savefig(f"{name}_{STEM}.png", dpi=150)
+    plt.savefig(f"{name}_{STEM}.pdf")
+    plt.show()
 
 PlotMap(chaotic_fraction, "chaotic fraction", "Fraction of initial conditions reaching chaos",
         "chaotic_fraction", vmin=0.0, vmax=1.0)
 PlotMap(lyapunov_chaotic, "$\\Lambda$", "Lyapunov exponent on the chaotic attractors",
         "lyapunov_chaotic")
-PlotMap(lyapunov_max, "$\\Lambda_{max}$", "Largest Lyapunov exponent found", "lyapunov_max")
+PlotMapLyapunov(lyapunov_max, "$\\Lambda_{max}$", "Largest Lyapunov exponent found", "lyapunov_max")
 PlotMap(filling, "n", "Filling per site on the attractor", "filling")
-PlotMap(attractors, "attractors", "Number of coexisting attractors", "attractors")
+PlotMap(attractors, "attractors", "Number of coexisting attractors", "attractors", vmax=10)
