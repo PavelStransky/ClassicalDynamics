@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=bhdriven3
+#SBATCH --job-name=bhdriven2
 #SBATCH --partition=ffa-preempt        # preemptible partition; job resumes cleanly (see note below)
 #SBATCH --time=1:00:00                 # CELLS_PER_TASK (20) cells x typically 0.5-3 min each, plus rare slow cells; tune after a test run
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=1G               # generous margin for DifferentialEquations precompilation; see note below
-#SBATCH --array=0-4018%300             # one task per block of CELLS_PER_TASK cells: cld(241*241, 20) = 2905 tasks (BHMapDrivenDissipativeChimera.jl prints the exact range)
-#SBATCH --output=/home/%u/results/bh/driven/3/logs/bhdriven_%a.out
-#SBATCH --error=/home/%u/results/bh/driven/3/logs/bhdriven_%a.err
+#SBATCH --array=0-3016%300             # one task per block of CELLS_PER_TASK cells: cld(241*241, 20) = 2905 tasks (BHMapDrivenDissipativeChimera.jl prints the exact range)
+#SBATCH --output=/home/%u/results/bh/driven/2/logs/bhdriven_%a.out
+#SBATCH --error=/home/%u/results/bh/driven/2/logs/bhdriven_%a.err
 #SBATCH --mail-user=pavel.stransky@matfyz.cuni.cz
 #SBATCH --mail-type=END,FAIL
 
@@ -55,9 +55,9 @@
 # (%a restarts at 0 in every submission, so the log files of the chunks
 # overwrite each other; the results do not.)
 #
-# Results go to $HOME/results/bh/driven/3/J_-1.000_g_2.000_k_1.000/ (the
+# Results go to $HOME/results/bh/driven/2/J_-1.000_g_2.000_k_1.000/ (the
 # directory is derived from L, J, g, κ in BHMapDrivenDissipativeChimera.jl;
-# set BH_RESULTS_DIR to override it), logs to $HOME/results/bh/driven/3/logs/.
+# set BH_RESULTS_DIR to override it), logs to $HOME/results/bh/driven/2/logs/.
 # Cells already computed elsewhere are skipped if their files are copied into
 # the results directory before submitting. #SBATCH directives are parsed by
 # sbatch itself, not a shell, so $HOME can't be used there directly -- %u
@@ -65,7 +65,7 @@
 # expands the same way on Chimera, where home is always /home/<login>.
 # The log directory must exist before the *first* submission (SLURM opens
 # --output/--error when the job starts, before the mkdir -p below runs), so
-# create it once by hand: mkdir -p "$HOME/results/bh/driven/3/logs"
+# create it once by hand: mkdir -p "$HOME/results/bh/driven/2/logs"
 #
 # IMPORTANT -- warm the cache before your first sbatch, with the SAME
 # JULIA_CPU_TARGET=generic set below (a cache built without it targets one
@@ -111,7 +111,7 @@ set -euo pipefail
 # see the note above.
 export JULIA_CPU_TARGET=generic
 
-mkdir -p "$HOME/results/bh/driven/3/logs"
+mkdir -p "$HOME/results/bh/driven/2/logs"
 
 cd "$SLURM_SUBMIT_DIR"
 

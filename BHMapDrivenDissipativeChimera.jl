@@ -90,7 +90,7 @@ include("BHDissipative.jl")
 
 # Constants and parameters
 const TRAJECTORIES = 500        # random initial conditions per (Δ, f) point; the basin statistics
-const L = 3                     # allowed modes are k = 2πm/3 only, i.e. k = 0 and a doubly
+const L = 2                     # allowed modes are k = 2πm/3 only, i.e. k = 0 and a doubly
                                 # degenerate k = 2π/3; k = π does not exist on an odd ring. Chaos
                                 # survives that (Λ up to +0.71 at these constants)
 const J = -1.0
@@ -122,8 +122,8 @@ const CHAOS_THRESHOLD = 0.01
 # Kept as LinRanges (not collected): indexing them yields exactly the values the `for Δ in
 # DELTA_VALUES` loop of BHMapDrivenDissipative.jl iterates over, and with them the same file names
 # and seeds.
-const DELTA_VALUES = LinRange(0.5, 2.5, 401)
-const F_VALUES = LinRange(0.5, 1.5, 501)
+const DELTA_VALUES = LinRange(0, 10, 501)
+const F_VALUES = LinRange(0, 6, 301)
 const DELTA_STEP = step(DELTA_VALUES)
 const F_STEP = step(F_VALUES)
 
