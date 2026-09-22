@@ -51,7 +51,7 @@ CMAP = plt.get_cmap("viridis").copy()
 CMAP.set_bad(color="white")
 
 # Must match the constants of BHMapDrivenDissipative.jl
-L = 3
+L = 2
 J = -1.0
 G = 2.0             # the note's g; the Julia side takes U = g/2
 KAPPA = 1.0
@@ -67,12 +67,13 @@ TOLERANCE_LAMBDA = 0.05
 TOLERANCE_NORM = 0.05
 
 # Grid of BHMapDrivenDissipative.jl
-minDelta, maxDelta, numDelta = 0.5, 2.5, 401
-minF, maxF, numF = 0.5, 1.5, 501
+minDelta, maxDelta, numDelta = 0.0, 10.0, 501
+minF, maxF, numF = 0.0, 6.0, 301
 
 PATH = f"c:/Users/micro/results/bh/driven/{L}/J_{J:.3f}_g_{G:.3f}_k_{KAPPA:.3f}/"
 
-STEM = f"driven_detail_{L}"
+STEM = f"driven_{L}"
+# STEM = f"driven_detail_{L}"
 
 deltas = np.linspace(minDelta, maxDelta, numDelta)
 fs = np.linspace(minF, maxF, numF)

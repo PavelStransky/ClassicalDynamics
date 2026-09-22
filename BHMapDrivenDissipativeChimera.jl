@@ -122,8 +122,8 @@ const CHAOS_THRESHOLD = 0.01
 # Kept as LinRanges (not collected): indexing them yields exactly the values the `for Δ in
 # DELTA_VALUES` loop of BHMapDrivenDissipative.jl iterates over, and with them the same file names
 # and seeds.
-const DELTA_VALUES = LinRange(0, 10, 501)
-const F_VALUES = LinRange(0, 6, 301)
+const DELTA_VALUES = LinRange(0.5, 3, 501)
+const F_VALUES = LinRange(0.5, 2.5, 401)
 const DELTA_STEP = step(DELTA_VALUES)
 const F_STEP = step(F_VALUES)
 
