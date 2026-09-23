@@ -62,7 +62,7 @@
 using Distributed
 using Printf
 
-workers = 16
+workers = 8
 
 if nprocs() <= workers
     addprocs(workers + 1 - nprocs())
@@ -100,7 +100,7 @@ end
 # above CHAOS_THRESHOLD is wide; ZERO_THRESHOLD has to sit above the finite-time scatter of a true
 # zero (~1e-3 over this window) and below the smallest genuine contraction rate.
 @everywhere const CHAOS_THRESHOLD = 1e-2
-@everywhere const ZERO_THRESHOLD = 5e-3
+@everywhere const ZERO_THRESHOLD = 2e-3
 
 # Grid.  g is the first axis in every mode.
 @everywhere const G_VALUES = LinRange(-50.0, -2.0, 241)
