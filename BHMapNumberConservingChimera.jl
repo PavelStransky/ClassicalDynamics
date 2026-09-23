@@ -63,7 +63,7 @@ const INTEGRATION_TIME = 5000.0
 const CHAOS_THRESHOLD = 1e-2
 const ZERO_THRESHOLD = 2e-3
 
-const G_VALUES = LinRange(-50.0, -2.0, 241)
+const G_VALUES = LinRange(-50.0, -2.0, 121)
 
 const Y_VALUES =
     SCAN === :eta ? LinRange(0.0, 6.0, 121) :
@@ -211,7 +211,7 @@ end
 # flattened (g, y) grid. A cell is TRAJECTORIES full spectra; on the desktop (i9-13900HX) one
 # trajectory of the default integration window costs about 1 CPU-s at L = 3, so a cell is roughly
 # 2 min and a block of 20 about 40 min, before the JULIA_CPU_TARGET=generic penalty.
-const CELLS_PER_TASK = 10
+const CELLS_PER_TASK = 5
 
 const N_Y = length(Y_VALUES)
 const TOTAL_CELLS = length(G_VALUES) * N_Y

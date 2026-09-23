@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=1G               # generous margin for DifferentialEquations precompilation; see below
-#SBATCH --array=0-2916%300             # cld(241*121, 20) = 1459 tasks (BHMapNumberConservingChimera.jl prints the exact range)
+#SBATCH --array=0-2928%300             # cld(121*121, 5) = 2928 tasks (BHMapNumberConservingChimera.jl prints the exact range)
 #SBATCH --output=/home/%u/results/bh/number-conserving/3/logs/bhnumcons_%a.out
 #SBATCH --error=/home/%u/results/bh/number-conserving/3/logs/bhnumcons_%a.err
 #SBATCH --mail-user=pavel.stransky@matfyz.cuni.cz
