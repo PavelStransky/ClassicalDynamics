@@ -1151,5 +1151,5 @@ end
 if abspath(PROGRAM_FILE) == @__FILE__
     Checks()
     println()
-    Demo(; Ns = [12, 13, 14], savePath = "liouvillian_spacings_3", showFigures = false)
+    Demo(; Ns = [12, 13, 14, 15, 16], savePath = "liouvillian_spacings_3", showFigures = false)
 end
