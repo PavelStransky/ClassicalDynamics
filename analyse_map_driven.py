@@ -67,13 +67,13 @@ TOLERANCE_LAMBDA = 0.05
 TOLERANCE_NORM = 0.05
 
 # Grid of BHMapDrivenDissipative.jl
-minDelta, maxDelta, numDelta = 0.0, 10.0, 501
-minF, maxF, numF = 0.0, 6.0, 301
+minDelta, maxDelta, numDelta = 0.5, 3.0, 501
+minF, maxF, numF = 0.5, 2.5, 401
 
 PATH = f"c:/Users/micro/results/bh/driven/{L}/J_{J:.3f}_g_{G:.3f}_k_{KAPPA:.3f}/"
 
-STEM = f"driven_{L}"
-# STEM = f"driven_detail_{L}"
+# STEM = f"driven_{L}"
+STEM = f"driven_detail_{L}"
 
 deltas = np.linspace(minDelta, maxDelta, numDelta)
 fs = np.linspace(minF, maxF, numF)
