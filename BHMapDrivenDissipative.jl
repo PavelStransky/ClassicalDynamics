@@ -75,7 +75,7 @@ end
 
 # Constants and parameters
 const TRAJECTORIES = 500        # random initial conditions per (Δ, f) point; the basin statistics
-const L = 3                     # allowed modes are k = 2πm/3 only, i.e. k = 0 and a doubly
+const L = 2                     # allowed modes are k = 2πm/3 only, i.e. k = 0 and a doubly
                                 # degenerate k = 2π/3; k = π does not exist on an odd ring. Chaos
                                 # survives that (Λ up to +0.71 at these constants)
 const J = -1.0
@@ -106,8 +106,8 @@ const σ = 0.0                   # finite-N additive noise
 # +0.71, and it dies out by f = 5.5 everywhere in this Δ range. Δ ∈ [0, 6] × f ∈ [0, 5.5] therefore
 # holds the whole tongue up to Δ = 6 (upper fold 4.031) together with the chaotic band and a margin
 # above it, at a 0.1 step in both directions.
-@everywhere const DELTA_VALUES = LinRange(0.0, 10.0, 501)
-@everywhere const F_VALUES = LinRange(0.0, 7.0, 351)
+@everywhere const DELTA_VALUES = LinRange(0.5, 3.0, 501)
+@everywhere const F_VALUES = LinRange(0.5, 2.5, 401)
 @everywhere const DELTA_STEP = step(DELTA_VALUES)
 @everywhere const F_STEP = step(F_VALUES)
 
