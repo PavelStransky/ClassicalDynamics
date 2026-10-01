@@ -60,7 +60,8 @@ PATH = sys.argv[1] if len(sys.argv) > 1 else \
     os.path.join(os.path.expanduser("~"), "results", "bh", "number-conserving", "3", "eta",
                  "J_1.000_k_0.300_e_3.000_m_0.000")
 
-AXIS_LABELS = {"eta": "$\\eta$", "kappa": "$\\kappa$", "modulation": "rate modulation"}
+AXIS_LABELS = {"eta": "$\\eta$", "kappa": "$\\kappa$", "modulation": "rate modulation",
+               "J": "$J$ ($g$, $\\eta$, $\\kappa$ fixed)"}
 CLASS_NAMES = {-1: "undetermined", 0: "fixed point", 1: "limit cycle", 2: "torus",
                3: "chaotic", 4: "hyperchaotic", 5: "neutral (no contraction)"}
 

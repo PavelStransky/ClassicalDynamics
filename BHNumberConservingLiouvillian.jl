@@ -43,9 +43,10 @@
 #   * REFLECTION j -> -j exists only at eta = 0, where it reverses no directed hop because there is
 #     none (note §6).  It then combines with Z_L into the dihedral group and, composed with the
 #     adjoint, gives every sector an antiunitary symmetry, so the reference ensemble is no longer
-#     Ginibre.  The code detects this and says so loudly rather than resolving it: eta = 0 is the
-#     case where BHNumberConserving.jl finds no classical chaos either, so it is the control, not
-#     the case of interest.  For eta != 0 the decomposition here is complete.
+#     Ginibre.  It maps q to -q, so it splits only the self-conjugate sectors, into two parities;
+#     SectorSpectra(p; parity = true) does that split (ParitySectors) and checks it.  Without it the
+#     code only warns: eta = 0 is the case where BHNumberConserving.jl finds no classical chaos,
+#     the control of item C2.  For eta != 0 the decomposition here is complete.
 #
 # WHY NEAREST-NEIGHBOUR SPACINGS NEED CARE HERE.  The spectrum is complex, so there is no ordering
 # and no one-dimensional unfolding.  The distances are unfolded locally against the density
@@ -254,6 +255,8 @@ struct MomentumData
     momenta::Vector{Float64}
     K::Matrix{ComplexF64}
     jumps::Vector{Matrix{ComplexF64}}
+    V::Matrix{ComplexF64}                   # Fock -> momentum basis; the reflection and the
+                                            # eigenvector conversions need it
 end
 
 function MomentumData(basis::NumberBasis, p::LiouvillianParameters)
@@ -298,7 +301,32 @@ function MomentumData(basis::NumberBasis, p::LiouvillianParameters)
     K = EffectiveGenerator(H, jumps)
 
     return MomentumData(L, ranges, momenta, Matrix(V' * K * V),
-                        [Matrix(V' * Lk * V) for Lk in jumps])
+                        [Matrix(V' * Lk * V) for Lk in jumps], V)
+end
+
+
+""" Dimensions d_m of the momentum subspaces of the N-boson space, counted from the translation
+    orbits of the Fock states (an orbit of length l contributes one state to every momentum m with
+    m l / L integer), and from them the dimension sum_k d_k d_(k-m) of every Liouvillian sector.
+    No matrix is built, so this answers K13 (the actual sector dimensions of Table I, which are not
+    exactly d_N^2 / L) at any L and N in a fraction of a second. """
+function SectorDimensions(L::Integer, N::Integer)
+    basis = NumberBasis(L, N)
+    counts = zeros(Int, L)
+    seen = Set{Vector{Int}}()
+
+    for state in basis.states
+        state in seen && continue
+        orbit = [circshift(state, r) for r = 0:(L - 1)]
+        union!(seen, orbit)
+        l = length(unique(orbit))
+        for m = 0:(L - 1)
+            mod(m * l, L) == 0 && (counts[m + 1] += 1)
+        end
+    end
+
+    sectors = [sum(counts[k + 1] * counts[mod(k - m, L) + 1] for k = 0:(L - 1)) for m = 0:(L - 1)]
+    return (momentum = counts, sectors = sectors, dN = length(basis))
 end
 
 
@@ -365,7 +393,65 @@ function LiouvillianSector(data::MomentumData, m::Integer)
 end
 
 
-""" The whole (N, N) block in one piece, WITHOUT the Z_L decomposition: 
+""" Reflection P of note §6: P b_j^dag P^dag = b_(2-j)^dag, sites counted mod L with site 1 fixed.
+    A real symmetric permutation with P^2 = 1 and P T P = T^-1.  It maps the bond (j, j+1) onto the
+    bond (1-j, 2-j) traversed backwards, so it reverses every directed hop and is a symmetry of the
+    Liouvillian only at η = 0 (ReflectionIsSymmetry); c_(j,j+1) goes to -c_(1-j,2-j), and the
+    dissipator does not see the sign. """
+function ReflectionOperator(basis::NumberBasis)
+    L, d = basis.L, length(basis)
+    rows = [basis.index[[state[mod1(2 - j, L)] for j = 1:L]] for state in basis.states]
+    return sparse(rows, collect(1:d), ones(ComplexF64, d), d, d)
+end
+
+
+""" The superoperator rho -> P rho P^dag on the sector m, assembled exactly like a jump term of
+    LiouvillianSector.  P maps momentum k to -k, so it maps sector q to sector -q; the matrix
+    returned is meaningful only for a SELF-CONJUGATE sector (q = -q), which it maps onto itself -
+    and there it is a Hermitian involution whose +1 / -1 eigenspaces are the two parities. """
+function ReflectionSector(data::MomentumData, P::AbstractMatrix, m::Integer)
+    L = data.L
+    SelfConjugateSector(L, m) || error("the reflection maps sector $m to sector $(mod(-m, L))")
+
+    reflection = data.V' * P * data.V
+    rowRange(k) = data.ranges[k]
+    columnRange(k) = data.ranges[mod1(k - m, L)]
+
+    dimensions = [length(rowRange(k)) * length(columnRange(k)) for k = 1:L]
+    offsets = cumsum(vcat(0, dimensions))
+    block = zeros(ComplexF64, offsets[end], offsets[end])
+
+    for k1 = 1:L, k2 = 1:L
+        (dimensions[k1] == 0 || dimensions[k2] == 0) && continue
+        block[(offsets[k1] + 1):offsets[k1 + 1], (offsets[k2] + 1):offsets[k2 + 1]] =
+            kron(view(reflection, rowRange(k1), rowRange(k2)),
+                 conj(view(reflection, columnRange(k1), columnRange(k2))))
+    end
+
+    return block
+end
+
+
+""" A self-conjugate sector split into its two reflection parities - the resolution that item C2
+    of the TODO list needs at η = 0.  Returns the two blocks, and two numbers that must be at
+    round-off level for the split to mean anything: `leakage`, the relative norm of the block that
+    couples the parities (it vanishes iff the reflection commutes with the Liouvillian), and
+    `involution`, the deviation of the reflection superoperator from S^2 = 1. """
+function ParitySectors(data::MomentumData, basis::NumberBasis, m::Integer; block = nothing)
+    block = isnothing(block) ? LiouvillianSector(data, m) : block
+    S = ReflectionSector(data, ReflectionOperator(basis), m)
+
+    decomposition = eigen(Hermitian(0.5 .* (S .+ S')))
+    even = decomposition.vectors[:, decomposition.values .> 0]
+    odd = decomposition.vectors[:, decomposition.values .< 0]
+
+    return (even = even' * block * even, odd = odd' * block * odd,
+            leakage = norm(odd' * block * even) / norm(block),
+            involution = norm(S * S - I) / sqrt(size(S, 1)))
+end
+
+
+""" The whole (N, N) block in one piece, WITHOUT the Z_L decomposition:
     L = I (x) K + conj(K) (x) I + sum_k conj(L_k) (x) L_k  in the column-stacking convention
     vec(A rho B) = kron(transpose(B), A) vec(rho).  Only for the checks and for tiny systems -
     it is d_N^2 x d_N^2 and the point of the sectors is not to build it. """
@@ -393,15 +479,43 @@ end
     With `useConjugation` (the default) only the sectors m = 0 ... L/2 are diagonalised and the rest
     are obtained by complex conjugation, since rho -> rho^dag maps sector q onto sector -q (verified
     to 1e-13 in Checks()).  That halves the work at L = 3 and is what makes N = 16 affordable;
-    pass false to diagonalise every sector independently, which is the slower cross-check. """
-function SectorSpectra(p::LiouvillianParameters; verbose = true, useConjugation = true)
+    pass false to diagonalise every sector independently, which is the slower cross-check.
+
+    `only` restricts the work to a list of sectors (the map of item C1 needs the clean sector m = 1
+    alone and should not pay for the other two); the sectors returned are then exactly those.
+
+    `parity = true` resolves the reflection of note §6 where it is a symmetry (η = 0): every
+    self-conjugate sector is then replaced by its two parity blocks, returned as separate entries
+    with `parity = +1` and `-1` (every other entry has `parity = 0`).  The split is checked on the
+    spot - a leakage above 1e-10 means the reflection is not a symmetry and is an error. """
+function SectorSpectra(p::LiouvillianParameters; verbose = true, useConjugation = true,
+        only = nothing, parity = false)
     basis = NumberBasis(p.L, p.N)
     data = MomentumData(basis, p)
 
     spectra = Vector{Vector{ComplexF64}}(undef, p.L)
-    computed = useConjugation ? (0:div(p.L, 2)) : (0:(p.L - 1))
+    computed = !isnothing(only) ? collect(only) :
+               useConjugation ? (0:div(p.L, 2)) : (0:(p.L - 1))
+    split = Dict{Int, Any}()
+    resolve = parity && ReflectionIsSymmetry(p)
 
     for m in computed
+        if resolve && SelfConjugateSector(p.L, m)
+            time = @elapsed begin
+                blocks = ParitySectors(data, basis, m)
+                blocks.leakage < 1e-10 ||
+                    error(@sprintf("parity leakage %.1e in sector %d: the reflection is not a symmetry",
+                                   blocks.leakage, m))
+                split[m] = [sort(eigvals(blocks.even), by = z -> (-real(z), imag(z))),
+                            sort(eigvals(blocks.odd), by = z -> (-real(z), imag(z)))]
+            end
+            spectra[m + 1] = vcat(split[m]...)
+            verbose && @printf("  sector m = %d (q = %.4f): parities +1 / -1 with %d / %d eigenvalues (leakage %.1e), %.1f s\n",
+                               m, 2 * pi * m / p.L, length(split[m][1]), length(split[m][2]),
+                               blocks.leakage, time)
+            continue
+        end
+
         time = @elapsed values = eigvals(LiouvillianSector(data, m))
         spectra[m + 1] = sort(values, by = z -> (-real(z), imag(z)))
 
@@ -414,15 +528,28 @@ function SectorSpectra(p::LiouvillianParameters; verbose = true, useConjugation 
     end
 
     for m = 0:(p.L - 1)
-        isassigned(spectra, m + 1) && continue
+        (isassigned(spectra, m + 1) || !isnothing(only)) && continue
         spectra[m + 1] = sort(conj.(spectra[mod(p.L - m, p.L) + 1]), by = z -> (-real(z), imag(z)))
         verbose && @printf("  sector m = %d (q = %.4f): %5d eigenvalues, by conjugation of sector %d
 ",
                            m, 2 * pi * m / p.L, length(spectra[m + 1]), mod(p.L - m, p.L))
     end
 
-    return [(m = m, q = 2 * pi * m / p.L, values = spectra[m + 1],
-             selfConjugate = SelfConjugateSector(p.L, m)) for m = 0:(p.L - 1)]
+    entries = []
+    for m = 0:(p.L - 1)
+        isassigned(spectra, m + 1) || continue
+        if haskey(split, m)
+            for (parityValue, values) in zip((1, -1), split[m])
+                push!(entries, (m = m, q = 2 * pi * m / p.L, values = values,
+                                selfConjugate = true, parity = parityValue))
+            end
+        else
+            push!(entries, (m = m, q = 2 * pi * m / p.L, values = spectra[m + 1],
+                            selfConjugate = SelfConjugateSector(p.L, m), parity = 0))
+        end
+    end
+
+    return entries
 end
 
 
@@ -839,9 +966,9 @@ function ReflectionWarning(p::LiouvillianParameters)
     println("      antiunitary symmetry and none of them is in the Ginibre class A: read the table")
     println("      against class AI-dagger (Sa, Ribeiro, Prosen), not against the Ginibre row.")
     println("    * The self-conjugate sectors (q = 0, and q = pi for even L) additionally split into")
-    println("      the two reflection parities, which this code does NOT resolve - their statistics")
-    println("      are then a superposition of two independent spectra and will look Poisson-like")
-    println("      for that reason alone, whatever the dynamics does.")
+    println("      the two reflection parities.  Unless SectorSpectra is called with parity = true")
+    println("      (ParitySectors), their statistics are a superposition of two independent spectra")
+    println("      and will look Poisson-like for that reason alone, whatever the dynamics does.")
     println("  eta = 0 is also the case in which BHNumberConserving.jl finds no classical chaos at")
     println("  all (note §8.2), so it is a control rather than the case of interest.")
     println("  " * "!" ^ 88)
@@ -1110,6 +1237,39 @@ function Checks(; L = 3, N = 4, verbose = true)
     push!(results, ("conjugation shortcut in SectorSpectra vs diagonalising every sector",
                     maximum(maximum(abs, sort(shortcut[i].values, by = Key) .-
                                          sort(explicit[i].values, by = Key)) for i = 1:L)))
+
+    # --- reflection parity at η = 0 (item C2) ----------------------------------------------------------
+    # The Γsym and γd backgrounds are kept: both are reflection covariant, so the split must still be
+    # exact, while η != 0 must spoil it.
+    reflected = LiouvillianParameters(L, N; g = -20.0, η = 0.0, κ = 0.3, Γsym = 0.05, γd = 0.02)
+    reflectedData = MomentumData(basis, reflected)
+    blocks = ParitySectors(reflectedData, basis, 0)
+    push!(results, ("η = 0: parity blocks decouple (relative leakage)", blocks.leakage))
+    push!(results, ("η = 0: reflection superoperator is an involution", blocks.involution))
+
+    whole = eigvals(LiouvillianSector(reflectedData, 0))
+    parts = vcat(eigvals(blocks.even), eigvals(blocks.odd))
+    push!(results, ("η = 0: parity spectra reassemble sector q = 0",
+                    maximum(abs, sort(whole, by = Key) .- sort(parts, by = Key))))
+
+    clean = eigvals(LiouvillianSector(reflectedData, 1))
+    push!(results, ("η = 0: reflection∘† makes sector q != 0 closed under conjugation",
+                    maximum(minimum(abs.(clean .- conj(z))) for z in clean)))
+
+    circulating = ParitySectors(data, basis, 0)
+    push!(results, ("η != 0: parity leakage is O(1) (1 - leakage; must NOT be ~0)",
+                    circulating.leakage > 1e-3 ? 0.0 : 1.0))
+
+    # --- sector dimensions from the orbit count (K13) -------------------------------------------------
+    dimensionError = 0
+    for (Lc, Nc) in ((3, N), (3, 6), (4, 5), (4, 6))
+        counted = SectorDimensions(Lc, Nc)
+        pc = LiouvillianParameters(Lc, Nc; g = -20.0, η = 3.0, κ = 0.3)
+        built = MomentumData(NumberBasis(Lc, Nc), pc)
+        sizes = [size(LiouvillianSector(built, m), 1) for m = 0:(Lc - 1)]
+        dimensionError = max(dimensionError, maximum(abs.(sizes .- counted.sectors)))
+    end
+    push!(results, ("SectorDimensions = sizes of the assembled sectors (L = 3, 4)", dimensionError))
 
     # --- the Grobe-Haake-Sommers law -----------------------------------------------------------------
     grid = range(0, 5, length = 5001)

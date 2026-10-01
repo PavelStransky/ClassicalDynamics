@@ -46,42 +46,98 @@ using Printf
 include("BHNumberConserving.jl")
 
 
-# Constants and parameters - keep in step with BHMapNumberConserving.jl (see the header)
-const L = 3
+# Constants and parameters - keep the DEFAULTS in step with BHMapNumberConserving.jl (see the header)
+#
+# Every constant below can be overridden by an environment variable, so that several sweeps can
+# wait in the queue at the same time from ONE checkout.  This matters because an array task reads
+# this file when it STARTS, not when it is submitted: editing the constants between two sbatch
+# calls would silently change the sweep of every task of the first submission still pending.  The
+# presets of BHMapNumberConservingChimeraSubmit.sh set these variables; with none of them set, the
+# script computes exactly the sweep it always has.
+#
+#   BH_L, BH_SCAN, BH_KAPPA, BH_ETA, BH_MODULATION     model and plane
+#   BH_G, BH_Y                                         grid axes as "first:last:count", or
+#                                                      "first:last:count:log" for geometric spacing;
+#                                                      count = 1 turns the plane into a cut
+#   BH_TRAJECTORIES, BH_RELAXATION_TIME, BH_INTEGRATION_TIME, BH_JITTER, BH_CELLS_PER_TASK
+#   BH_TAG                                             appended to the results directory, so a cut
+#                                                      or a pinned (JITTER = 0) run never shares a
+#                                                      directory - and a parameters.txt - with a map
+#
+# SCAN = :J is the EXPERIMENTAL path.  In a lattice experiment the depth tunes the hopping J
+# (exponentially) while g = U N and the engineered rates η, κ stay put.  The second axis is then
+# the physical J, with g (first axis), η and κ held at their values: the cell (g, J) is the point
+# (g/J, η/J, κ/J) of the J = 1 model, and that is what is integrated, so the time windows, the
+# thresholds of the classification and the stored exponents are all in units of 1/J, exactly as
+# in every other scan - the cells of a ray are directly comparable with the (g, η) map.  Multiply
+# an exponent by the J of its cell to express it in the time unit of the fixed rates.  Along the
+# ray the modulational-instability threshold is g_c(J) = J g_c(η/J, κ/J), written to
+# parameters.txt in these physical units.
+EnvironmentNumber(name, default) = haskey(ENV, name) ? parse(typeof(default), ENV[name]) : default
+
+function EnvironmentAxis(name, default)
+    haskey(ENV, name) || return default
+
+    fields = split(ENV[name], ':')
+    length(fields) in (3, 4) || error("$name must be first:last:count[:log], got $(ENV[name])")
+    first, last, count = parse(Float64, fields[1]), parse(Float64, fields[2]), parse(Int, fields[3])
+    count == 1 && first != last && error("$name: a single-point axis needs first == last")
+
+    if length(fields) == 4
+        fields[4] == "log" || error("$name: the optional fourth field can only be `log`")
+        first > 0 && last > 0 || error("$name: a logarithmic axis needs positive ends")
+        return exp.(LinRange(log(first), log(last), count))
+    end
+
+    return LinRange(first, last, count)
+end
+
+# A one-point axis (a cut) has no step; nothing is jittered along it.  A geometric axis has no
+# single step either, so it cannot be jittered (NaN makes the assertion below catch it).
+AxisStep(values) = length(values) <= 1 ? 0.0 : values isa AbstractRange ? step(values) : NaN
+
+const L = EnvironmentNumber("BH_L", 3)
 const J = 1.0
-const SCAN = :eta                       # :eta | :kappa | :modulation
+const SCAN = Symbol(get(ENV, "BH_SCAN", "eta"))          # :eta | :kappa | :modulation | :J
 
-const κ = 0.3
-const η = 3.0
-const MODULATION = 0.0
+const κ = EnvironmentNumber("BH_KAPPA", 0.3)
+const η = EnvironmentNumber("BH_ETA", 3.0)
+const MODULATION = EnvironmentNumber("BH_MODULATION", 0.0)
 
-const TRAJECTORIES = 100
+const TRAJECTORIES = EnvironmentNumber("BH_TRAJECTORIES", 100)
 
-const RELAXATION_TIME = 1000.0
-const INTEGRATION_TIME = 5000.0
+const RELAXATION_TIME = EnvironmentNumber("BH_RELAXATION_TIME", 1000.0)
+const INTEGRATION_TIME = EnvironmentNumber("BH_INTEGRATION_TIME", 5000.0)
 
 const CHAOS_THRESHOLD = 1e-2
 const ZERO_THRESHOLD = 2e-3
 
-const G_VALUES = LinRange(-50.0, -2.0, 121)
+const G_VALUES = EnvironmentAxis("BH_G", LinRange(-50.0, -2.0, 121))
 
-const Y_VALUES =
+const Y_VALUES = EnvironmentAxis("BH_Y",
     SCAN === :eta ? LinRange(0.0, 6.0, 121) :
     SCAN === :kappa ? LinRange(0.0, 1.5, 151) :
     SCAN === :modulation ? LinRange(0.0, 1.0, 101) :
-    error("SCAN must be :eta, :kappa or :modulation")
+    SCAN === :J ? exp.(LinRange(log(0.02), log(6.0), 121)) :
+    error("SCAN must be :eta, :kappa, :modulation or :J"))
 
-const G_STEP = step(G_VALUES)
-const Y_STEP = step(Y_VALUES)
+const G_STEP = AxisStep(G_VALUES)
+const Y_STEP = AxisStep(Y_VALUES)
 
-const JITTER = 1.0
+const JITTER = EnvironmentNumber("BH_JITTER", 1.0)
+
+@assert JITTER == 0 || (isfinite(G_STEP) && isfinite(Y_STEP)) "a logarithmic axis cannot be jittered: set BH_JITTER=0"
+@assert SCAN !== :J || minimum(Y_VALUES) > 0 "the J axis must be positive"
+
+const TAG = get(ENV, "BH_TAG", "")
 
 @assert RELAXATION_TIME < INTEGRATION_TIME "the spectrum is accumulated on (RELAXATION_TIME, INTEGRATION_TIME)"
 @assert L >= 3 "L >= 3: chaos is impossible on the 2D reduced space of the dimer (note §4)"
 
 const PATH = get(ENV, "BH_RESULTS_DIR",
     joinpath(homedir(), "results", "bh", "number-conserving", "$L", string(SCAN),
-             @sprintf("J_%.3f_k_%.3f_e_%.3f_m_%.3f", J, κ, η, MODULATION)))
+             @sprintf("J_%.3f_k_%.3f_e_%.3f_m_%.3f", J, κ, η, MODULATION) *
+             (isempty(TAG) ? "" : "_" * TAG)))
 
 
 function CellParameters(g, y)
@@ -89,6 +145,10 @@ function CellParameters(g, y)
         return NumberConservingParameters(L; J = J, g = g, κ = κ, η = y, modulation = MODULATION)
     elseif SCAN === :kappa
         return NumberConservingParameters(L; J = J, g = g, κ = y, η = η, modulation = MODULATION)
+    elseif SCAN === :J
+        # physical hopping y with g, η, κ fixed = the J = 1 model at (g/y, η/y, κ/y), in units of 1/y
+        return NumberConservingParameters(L; J = J, g = g / y, κ = κ / y, η = η / y,
+                                          modulation = MODULATION)
     else
         return NumberConservingParameters(L; J = J, g = g, κ = 0.0, η = η, modulation = y)
     end
@@ -188,14 +248,21 @@ function WriteMetadata()
         println(io, "integrationTime\t$INTEGRATION_TIME")
         println(io, "chaosThreshold\t$CHAOS_THRESHOLD")
         println(io, "jitter\t$JITTER")
+        println(io, "tag\t$TAG")
         println(io, "columns\t$(2 * L + 9)")
         println(io, "gValues\t", join(G_VALUES, ","))
         println(io, "yValues\t", join(Y_VALUES, ","))
+        # exponents, divergences and time windows are in units of 1/J of the cell; with SCAN = :J
+        # that J is the y value, so λ times y is the exponent in the time unit of the fixed rates
+        println(io, "exponentUnits\t", SCAN === :J ? "1/y (the J of the cell)" : "1/J")
 
+        # with SCAN = :J the threshold is in PHYSICAL units, g_c(J) = J g_c(η/J, κ/J), to be
+        # compared with the fixed g of the first axis
         thresholds = map(Y_VALUES) do y
             SCAN === :modulation && y != 0 && return NaN
             SCAN === :eta ? InstabilityThreshold(L; J = J, κ = κ, η = y) :
             SCAN === :kappa ? InstabilityThreshold(L; J = J, κ = y, η = η) :
+            SCAN === :J ? InstabilityThreshold(L; J = y, κ = κ, η = η) :
                               InstabilityThreshold(L; J = J, κ = 0.0, η = η)
         end
         println(io, "threshold\t", join(thresholds, ","))
@@ -211,7 +278,7 @@ end
 # flattened (g, y) grid. A cell is TRAJECTORIES full spectra; on the desktop (i9-13900HX) one
 # trajectory of the default integration window costs about 1 CPU-s at L = 3, so a cell is roughly
 # 2 min and a block of 20 about 40 min, before the JULIA_CPU_TARGET=generic penalty.
-const CELLS_PER_TASK = 5
+const CELLS_PER_TASK = EnvironmentNumber("BH_CELLS_PER_TASK", 5)
 
 const N_Y = length(Y_VALUES)
 const TOTAL_CELLS = length(G_VALUES) * N_Y

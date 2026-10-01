@@ -15,6 +15,13 @@
 # Submit from the repository root with:
 #   sbatch BHMapNumberConservingChimera.sh
 #
+# or, for any of the sweeps of number-conserving-BH-paper-TODO.md (the (g, eta)
+# map, the one-dimensional cuts, the L = 4 fine cut, the kappa = 0 map), with
+#   ./BHMapNumberConservingChimeraSubmit.sh <preset>
+# which sets the model and the grid through BH_* environment variables (see
+# BHMapNumberConservingChimera.jl) and passes the matching --array, --time and
+# log paths on the sbatch command line, overriding the #SBATCH lines below.
+#
 # The (g, eta) map of the NUMBER-CONSERVING dissipative Bose-Hubbard model of
 # number-conserving-BH.md; see BHMapNumberConserving.jl for the physics and the
 # output format, and section 8 of the note for what the scan decides.
@@ -76,7 +83,9 @@
 #
 # CHANGING THE PLANE. SCAN in BHMapNumberConservingChimera.jl selects (g, eta)
 # at fixed kappa, (g, kappa) at fixed eta, or (g, modulation) at kappa = 0 -
-# the last is question 2 of section 8. Y_VALUES and therefore the array size
+# the last is question 2 of section 8 - or (g, J) with eta and kappa fixed, the
+# experimental path of a lattice-depth sweep (preset ray-J of
+# BHMapNumberConservingChimeraSubmit.sh). Y_VALUES and therefore the array size
 # change with it (:modulation has 101 rows, so 1218 tasks), and PATH changes
 # too, so the three sweeps do not collide. Re-run the script once without
 # SLURM_ARRAY_TASK_ID after switching to get the new --array range, and update
@@ -131,7 +140,7 @@ set -euo pipefail
 # (identically) when warming the cache interactively -- see the note above.
 export JULIA_CPU_TARGET=generic
 
-mkdir -p "$HOME/results/bh/number-conserving/3/logs"
+mkdir -p "${BH_LOG_DIR:-$HOME/results/bh/number-conserving/3/logs}"
 
 cd "$SLURM_SUBMIT_DIR"
 
