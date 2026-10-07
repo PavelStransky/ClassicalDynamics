@@ -57,7 +57,7 @@ function Run([string]$Log, [string[]]$Arguments) {
 function Python([string]$Log, [string[]]$Arguments) {
     $file = Join-Path $Logs "$Log.log"
     "==== $(Get-Date -Format s)  python $($Arguments -join ' ')" | Out-File -Append -Encoding utf8 $file
-    & python @Arguments 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $file -Append
+    & python.exe @Arguments 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $file -Append
 }
 
 # Sparse slicing of one run: plan (unless present), slices in parallel processes, merge, and up to
