@@ -38,6 +38,8 @@
 
 include(joinpath(@__DIR__, "BHNumberConservingTransient.jl"))     # also brings BHNumberConserving.jl
 
+using ProgressMeter
+
 const ATTRACTOR_RESULTS = get(ENV, "BH_RESULTS_DIR",
     joinpath(homedir(), "results", "bh", "number-conserving", "classical", "3", "attractors"))
 
@@ -111,10 +113,11 @@ function LocalMaxima(ψ0, parameters; relaxation = 2000.0, window = 600.0, maxim
     return maximaC, maximaN, final
 end
 
-function Bifurcation(; η = 3.0, gs = collect(-5.0:-0.05:-10.0), randoms = 8)
+function Bifurcation(; η = 3.0, gs = collect(-2.0:-0.01:-10.0), randoms = 20)
     rows = []
     lock_ = ReentrantLock()
 
+    randomProgress = Progress(length(gs) * randoms; desc = "random initial conditions ")
     Threads.@threads for g in gs
         parameters = Ring(g, η)
         for r = 1:randoms
@@ -124,16 +127,19 @@ function Bifurcation(; η = 3.0, gs = collect(-5.0:-0.05:-10.0), randoms = 8)
                 append!(rows, [(g, r, 1, m) for m in maximaC])
                 append!(rows, [(g, r, 2, m) for m in maximaN])
             end
+            next!(randomProgress)
         end
     end
 
     # continuation, both directions; sources -1 (g decreasing) and -2 (g increasing)
+    sweepProgress = Progress(2 * length(gs); desc = "continuation sweeps ")
     for (source, sweep) in ((-1, gs), (-2, reverse(gs)))
         ψ = UniformInitialCondition(3; amplitude = 1e-3, rng = Xoshiro(source))
         for g in sweep
             maximaC, maximaN, ψ = LocalMaxima(ψ, Ring(g, η); relaxation = 500.0)
             append!(rows, [(g, source, 1, m) for m in maximaC])
             append!(rows, [(g, source, 2, m) for m in maximaN])
+            next!(sweepProgress)
         end
     end
 
