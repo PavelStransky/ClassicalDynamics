@@ -136,7 +136,7 @@ function Bifurcation(; η = 3.0, gs = collect(-2.0:-0.01:-10.0), randoms = 20)
     for (source, sweep) in ((-1, gs), (-2, reverse(gs)))
         ψ = UniformInitialCondition(3; amplitude = 1e-3, rng = Xoshiro(source))
         for g in sweep
-            maximaC, maximaN, ψ = LocalMaxima(ψ, Ring(g, η); relaxation = 500.0)
+            maximaC, maximaN, ψ = LocalMaxima(ψ, Ring(g, η); relaxation = 1000.0)
             append!(rows, [(g, source, 1, m) for m in maximaC])
             append!(rows, [(g, source, 2, m) for m in maximaN])
             next!(sweepProgress)
