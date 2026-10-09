@@ -104,7 +104,7 @@ const κ = EnvironmentNumber("BH_KAPPA", 0.3)
 const η = EnvironmentNumber("BH_ETA", 3.0)
 const MODULATION = EnvironmentNumber("BH_MODULATION", 0.0)
 
-const TRAJECTORIES = EnvironmentNumber("BH_TRAJECTORIES", 200)
+const TRAJECTORIES = EnvironmentNumber("BH_TRAJECTORIES", 100)
 
 const RELAXATION_TIME = EnvironmentNumber("BH_RELAXATION_TIME", 1000.0)
 const INTEGRATION_TIME = EnvironmentNumber("BH_INTEGRATION_TIME", 5000.0)
