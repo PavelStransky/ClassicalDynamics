@@ -9,8 +9,9 @@
 #   bifurcation   C15  η = 3, g = -5.0 ... -10.0 in steps of 0.05: local maxima of the bond coherence
 #                      C and of n_1 on the attractor, from 8 random initial conditions and from two
 #                      continuation sweeps (g decreasing and increasing, each step started from the
-#                      final state of the previous one) - hysteresis shows up as the two sweeps
-#                      disagreeing.  The route to chaos (A5) is read off this diagram together with
+#                      final state of the previous one, kicked by 1e-6 so that an unstable fixed
+#                      point is left) - hysteresis shows up as the two sweeps disagreeing.
+#                      The route to chaos (A5) is read off this diagram together with
 #                      the Lyapunov cut `cut-eta3` computed on Chimera.
 #   correlations  C14  autocorrelation functions on the chaotic attractor (-20, 3) of the q = 2π/3
 #                      Fourier component of n_j (complex) and of C, averaged over trajectories;
@@ -97,10 +98,15 @@ function LocalMaxima(ψ0, parameters; relaxation = 2000.0, window = 600.0, maxim
         index == 1 && length(maximaC) < maximum_ && push!(maximaC, BondCoherence(u) / sum(abs2, u))
         index == 2 && length(maximaN) < maximum_ && push!(maximaN, abs2(u[1]) / sum(abs2, u))
     end
+    # On a fixed point both derivatives are rounding noise (~1e-17) of either sign, so that every
+    # step "crosses zero" right at its start; the two callbacks then retrigger each other and the
+    # time stops advancing until maxiters.  The offset keeps the sign definite there.  A true
+    # maximum is displaced by it by ~1e-12 in time, far below the integration tolerance.
+    offset = 1e-12
     callback = CallbackSet(
-        ContinuousCallback((u, t, integrator) -> Derivatives(u)[1], nothing,
+        ContinuousCallback((u, t, integrator) -> Derivatives(u)[1] + offset, nothing,
                            integrator -> Record!(integrator, 1); save_positions = (false, false)),
-        ContinuousCallback((u, t, integrator) -> Derivatives(u)[2], nothing,
+        ContinuousCallback((u, t, integrator) -> Derivatives(u)[2] + offset, nothing,
                            integrator -> Record!(integrator, 2); save_positions = (false, false)))
 
     solution = solve(PlainProblem(ψ0, parameters, relaxation + window), DP8(); reltol = 1e-10,
@@ -113,7 +119,7 @@ function LocalMaxima(ψ0, parameters; relaxation = 2000.0, window = 600.0, maxim
     return maximaC, maximaN, final
 end
 
-function Bifurcation(; η = 3.0, gs = collect(-2.0:-0.01:-10.0), randoms = 100)
+function Bifurcation(; η = 3.0, gs = collect(-2.0:-0.01:-10.0), randoms = 100, kick = 1e-6)
     rows = []
     lock_ = ReentrantLock()
 
@@ -134,8 +140,14 @@ function Bifurcation(; η = 3.0, gs = collect(-2.0:-0.01:-10.0), randoms = 100)
     # continuation, both directions; sources -1 (g decreasing) and -2 (g increasing)
     sweepProgress = Progress(2 * length(gs); desc = "continuation sweeps ")
     for (source, sweep) in ((-1, gs), (-2, reverse(gs)))
-        ψ = UniformInitialCondition(3; amplitude = 1e-3, rng = Xoshiro(source))
+        rng = Xoshiro(source)
+        ψ = UniformInitialCondition(3; amplitude = 1e-3, rng = rng)
         for g in sweep
+            # The carried state is kicked at every step.  On the stable side it converges onto the
+            # uniform state EXACTLY (identical amplitudes), and the vector field keeps identical
+            # amplitudes identical: with nothing to seed the instability, the sweep would follow
+            # the unstable fixed point beyond the threshold for ever.
+            ψ = ψ .+ kick .* randn(rng, ComplexF64, 3)
             maximaC, maximaN, ψ = LocalMaxima(ψ, Ring(g, η); relaxation = 1000.0)
             append!(rows, [(g, source, 1, m) for m in maximaC])
             append!(rows, [(g, source, 2, m) for m in maximaN])
