@@ -104,7 +104,7 @@ const κ = EnvironmentNumber("BH_KAPPA", 0.3)
 const η = EnvironmentNumber("BH_ETA", 3.0)
 const MODULATION = EnvironmentNumber("BH_MODULATION", 0.0)
 
-const TRAJECTORIES = EnvironmentNumber("BH_TRAJECTORIES", 100)
+const TRAJECTORIES = EnvironmentNumber("BH_TRAJECTORIES", 200)
 
 const RELAXATION_TIME = EnvironmentNumber("BH_RELAXATION_TIME", 1000.0)
 const INTEGRATION_TIME = EnvironmentNumber("BH_INTEGRATION_TIME", 5000.0)
@@ -113,12 +113,12 @@ const CHAOS_THRESHOLD = 1e-2
 const ZERO_THRESHOLD = 2e-3
 const STATIONARITY_THRESHOLD = 1e-2
 
-const G_VALUES = EnvironmentAxis("BH_G", LinRange(-50.0, -2.0, 121))
+const G_VALUES = EnvironmentAxis("BH_G", LinRange(-50.0, -2.0, 241))
 
 const Y_VALUES = EnvironmentAxis("BH_Y",
-    SCAN === :eta ? LinRange(0.0, 6.0, 121) :
-    SCAN === :kappa ? LinRange(0.0, 1.5, 151) :
-    SCAN === :modulation ? LinRange(0.0, 1.0, 101) :
+    SCAN === :eta ? LinRange(0.0, 6.0, 241) :
+    SCAN === :kappa ? LinRange(0.0, 1.5, 301) :
+    SCAN === :modulation ? LinRange(0.0, 1.0, 201) :
     SCAN === :J ? exp.(LinRange(log(0.02), log(6.0), 121)) :
     error("SCAN must be :eta, :kappa, :modulation or :J"))
 
