@@ -110,7 +110,9 @@ def plane_at(data, N, contour):
 
 
 def classical_chaotic_fraction(path):
-    """Chaotic fraction of a classical map directory (format of BHMapNumberConserving.jl)."""
+    """Chaotic fraction of a classical map directory (format of BHMapNumberConserving.jl): the share
+    of trajectories whose attractor type is chaotic or hyperchaotic, as in
+    analyse_map_number_conserving.py."""
     meta = {}
     with open(os.path.join(path, "parameters.txt")) as handle:
         for line in handle:
@@ -128,7 +130,7 @@ def classical_chaotic_fraction(path):
                 d = np.atleast_2d(np.loadtxt(name))
                 d = d[np.isfinite(d[:, 2 * L])]
                 if len(d):
-                    fraction[i, j] = np.mean(d[:, 2 * L] > 1e-2)
+                    fraction[i, j] = np.mean(np.isin(d[:, 2 * L + 4], (3, 4)))
     return gs, ys, fraction
 
 

@@ -111,6 +111,7 @@ const INTEGRATION_TIME = EnvironmentNumber("BH_INTEGRATION_TIME", 5000.0)
 
 const CHAOS_THRESHOLD = 1e-2
 const ZERO_THRESHOLD = 2e-3
+const STATIONARITY_THRESHOLD = 1e-2
 
 const G_VALUES = EnvironmentAxis("BH_G", LinRange(-50.0, -2.0, 121))
 
@@ -175,7 +176,8 @@ function SingleTrajectory(index, g, y)
     result = try
         LyapunovSpectrum(RandomInitialCondition(L, rng), parameters;
                          relaxationTime = RELAXATION_TIME, integrationTime = INTEGRATION_TIME,
-                         zeroThreshold = ZERO_THRESHOLD, chaosThreshold = CHAOS_THRESHOLD, rng = rng)
+                         zeroThreshold = ZERO_THRESHOLD, chaosThreshold = CHAOS_THRESHOLD,
+                         stationarityThreshold = STATIONARITY_THRESHOLD, rng = rng)
     catch exception
         @warn "trajectory $index at (g, y) = ($gJittered, $yJittered) failed" exception
         return fill(NaN, 2 * L + 9)
@@ -196,7 +198,9 @@ function LyapunovMap(g, y, indices)
 
     λ = [row[2 * L + 1] for row in result]
     valid = filter(isfinite, λ)
-    chaotic = filter(v -> v > CHAOS_THRESHOLD, valid)
+    # chaotic by attractor TYPE, not by the sign of λ: a transient that has ended is not chaos
+    chaotic = [row for row in result
+               if row[2 * L + 5] in (CLASS_CODES[:chaotic], CLASS_CODES[:hyperchaotic])]
     residuals = filter(isfinite, [abs(row[2 * L + 4]) for row in result])
 
     println("Finished g = $g, $SCAN = $y (L = $L, J = $J, κ = $κ, η = $η, modulation = $MODULATION)")
@@ -207,9 +211,9 @@ function LyapunovMap(g, y, indices)
     end
 
     if length(chaotic) > 0
-        dimensions = [row[2 * L + 2] for row in result if row[2 * L + 1] > CHAOS_THRESHOLD]
         @printf("λ_max = %.4f, D_KY(red) = %.3f (out of %d)\n",
-                mean(chaotic), mean(dimensions), 2 * L - 2)
+                mean(row[2 * L + 1] for row in chaotic), mean(row[2 * L + 2] for row in chaotic),
+                2 * L - 2)
     end
 
     if length(residuals) > 0
@@ -247,6 +251,7 @@ function WriteMetadata()
         println(io, "relaxationTime\t$RELAXATION_TIME")
         println(io, "integrationTime\t$INTEGRATION_TIME")
         println(io, "chaosThreshold\t$CHAOS_THRESHOLD")
+        println(io, "stationarityThreshold\t$STATIONARITY_THRESHOLD")
         println(io, "jitter\t$JITTER")
         println(io, "tag\t$TAG")
         println(io, "columns\t$(2 * L + 9)")

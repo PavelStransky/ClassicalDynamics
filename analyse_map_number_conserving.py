@@ -17,7 +17,8 @@ number-conserving-BH.md. Three things differ from the driven case:
 The maps are basin statistics: every cell is sampled with many initial conditions drawn uniformly
 on the sphere sum_j n_j = 1 (the Fubini-Study measure of CP^(L-1)), so
 
-    chaotic fraction   share of initial conditions reaching a strange attractor
+    chaotic fraction   share of initial conditions reaching a strange attractor (attractor type
+                       chaotic or hyperchaotic - not merely a positive window-averaged exponent)
     lambda (chaotic)   mean exponent over those - how strong the chaos is where it exists
     D_KY (chaotic)     mean reduced Kaplan-Yorke dimension over those, out of 2L - 2
     attractors         number of distinct coexisting attractors (question 3)
@@ -46,8 +47,12 @@ FIGSIZE = (9.2, 6.4)
 CMAP = plt.get_cmap("viridis").copy()
 CMAP.set_bad(color="white")
 
-# Same value as CHAOS_THRESHOLD in the Julia script.
-THRESHOLD_CHAOS = 1e-2
+# Chaos is read from the attractor type, not from the sign of lambda_max: a chaotic transient that
+# ended on a fixed point inside the measurement window keeps a positive window average, and only
+# the type - which the Julia script decides by the stationarity of the final state - tells it from
+# a strange attractor. In files written before that test existed the type was chaotic exactly when
+# lambda_max exceeded CHAOS_THRESHOLD, so for them the two definitions give the same maps.
+CHAOTIC_CLASSES = (3, 4)
 
 # Two trajectories count as the same attractor when all three invariant averages agree to within
 # this absolute tolerance, widened by the time fluctuation of the observable on the attractor (a
@@ -163,7 +168,7 @@ for gi, g in enumerate(gs):
             continue
 
         lambdas = data[:, COLUMN_LAMBDA]
-        chaotic = lambdas > THRESHOLD_CHAOS
+        chaotic = np.isin(data[:, COLUMN_CLASS], CHAOTIC_CLASSES)
 
         chaotic_fraction[gi, yi] = np.mean(chaotic)
         lyapunov_max[gi, yi] = np.max(lambdas)

@@ -670,24 +670,37 @@ function ReducedSpectrum(spectrum)
 end
 
 
-""" Attractor type from the reduced spectrum.
+""" Attractor type from the reduced spectrum and from the stationarity of the final state.
 
     `:fixedPoint` means a RELATIVE fixed point, i.e. stationary up to the global phase
     (ψ_j(t) = exp(-i omega t) ψ_j(0)): the flow direction then coincides with the U(1) direction,
     so only two zero exponents exist instead of three.
 
+    It is recognised by `stationarity` - || F(ψ) + i omega ψ || on the final state, the speed in
+    the reduced space - BEFORE the exponents are counted, because a slowly attracting fixed point
+    defeats the count in both directions.  A contraction rate below `zeroThreshold` is counted as
+    a zero, so the fixed point reads as a torus; and a window that still holds the approach, or
+    the chaotic transient before it, averages to a positive exponent, so it reads as chaotic
+    although the trajectory has stopped.  A state that is not yet that stationary is still a
+    fixed point when every reduced exponent contracts, and with the default `stationarity = Inf`
+    that count is the only test.
+
     `:neutral` is the case where the WHOLE reduced spectrum is zero, so the flow neither contracts
     nor expands: an invariant torus of a locally volume-preserving region, not an attractor.  It is
     the generic outcome at κ = 0 with a uniform circulation (note §4), and it also turns up at
     κ = 0 with modulated rates wherever the trajectory settles where <sum_j c_j n_j> = 0.  Keeping
-    it apart from :torus matters for question 2, whose whole point is contraction. """
-function ClassifyAttractor(reduced; zeroThreshold = 5e-3, chaosThreshold = 1e-2)
+    it apart from :torus matters for question 2, whose whole point is contraction - which is also
+    why it is decided first: a trajectory that hovers near an elliptic relative fixed point is
+    nearly stationary, but nothing attracts it there. """
+function ClassifyAttractor(reduced; zeroThreshold = 5e-3, chaosThreshold = 1e-2,
+        stationarity = Inf, stationarityThreshold = 1e-2)
     positive = count(λ -> λ > chaosThreshold, reduced)
     zeros = count(λ -> abs(λ) <= zeroThreshold, reduced)
 
+    zeros == length(reduced) && return :neutral
+    stationarity <= stationarityThreshold && return :fixedPoint
     positive >= 2 && return :hyperchaotic
     positive == 1 && return :chaotic
-    zeros == length(reduced) && return :neutral
     zeros == 0 && return :fixedPoint
     zeros == 1 && return :limitCycle
     zeros == 2 && return :torus
@@ -708,7 +721,8 @@ end
         divergence        <div F> averaged over the measurement window (note §4 trace rule)
         traceError        | sum(spectrum) - <div F> |, the check of §8.4
         symmetryZeros     the two exponents dropped as the exact zeros; both should be tiny
-        stationarity      || F(ψ) + i omega ψ || at the end - zero on a relative fixed point
+        stationarity      || F(ψ) + i omega ψ || at the end - zero on a relative fixed point, which
+                          is how ClassifyAttractor recognises one (below `stationarityThreshold`)
         coherence, maximum_n, ipr, current   attractor averages of Observables, with their spreads
         normError         worst | sum_j n_j - 1 | seen: the dS/dt = 0 check of §4, live
         window            length of the measurement window, and startTime / accumulations, the
@@ -730,7 +744,8 @@ function LyapunovSpectrum(ψ0, parameters;
         solver = DP8(),
         maximumIterations = 10^8,
         zeroThreshold = 5e-3,
-        chaosThreshold = 1e-2)
+        chaosThreshold = 1e-2,
+        stationarityThreshold = 1e-2)
 
     L = parameters.L
     relaxationTime < integrationTime ||
@@ -797,7 +812,9 @@ function LyapunovSpectrum(ψ0, parameters;
             dimension = KaplanYorke(reduced),
             dimensionFull = KaplanYorke(spectrum),
             classification = ClassifyAttractor(reduced; zeroThreshold = zeroThreshold,
-                                               chaosThreshold = chaosThreshold),
+                                               chaosThreshold = chaosThreshold,
+                                               stationarity = stationarity,
+                                               stationarityThreshold = stationarityThreshold),
             divergence = divergence,
             traceError = abs(sum(spectrum) - divergence),
             symmetryZeros = dropped,
@@ -1162,16 +1179,18 @@ function ScanPoint(L, g; κ = 0.0, η = 0.0, modulation = 0.0, trajectories = 12
 end
 
 
-""" Compact summary of one parameter point. """
-function SummarisePoint(results; chaosThreshold = 1e-2)
+""" Compact summary of one parameter point.  "Chaotic" is the attractor type and not the sign of
+    the exponent: a chaotic transient that ended on a fixed point inside the measurement window
+    keeps a positive average, so it can still be `best` and set λmax, but it is not counted. """
+function SummarisePoint(results)
     λ = [r.reduced[1] for r in results]
     best = argmax(λ)
 
-    chaoticDimensions = [r.dimension for r in results if r.reduced[1] > chaosThreshold]
+    chaotic = [r for r in results if r.classification in (:chaotic, :hyperchaotic)]
 
     return (λmax = λ[best],
-            dimension = isempty(chaoticDimensions) ? NaN : mean(chaoticDimensions),
-            chaoticFraction = count(x -> x > chaosThreshold, λ) / length(λ),
+            dimension = isempty(chaotic) ? NaN : mean(r.dimension for r in chaotic),
+            chaoticFraction = length(chaotic) / length(results),
             classes = [r.classification for r in results],
             traceError = maximum(r.traceError for r in results),
             divergence = mean(r.divergence for r in results),

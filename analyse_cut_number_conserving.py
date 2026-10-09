@@ -37,7 +37,8 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-THRESHOLD_CHAOS = 1e-2
+THRESHOLD_CHAOS = 1e-2          # drawn in the lyapunov figure only
+CHAOTIC_CLASSES = (3, 4)        # chaos is the attractor type, as in analyse_map_number_conserving.py
 TOLERANCE = 0.08
 
 CLASS_NAMES = {-1: "undetermined", 0: "fixed point", 1: "limit cycle", 2: "torus",
@@ -125,8 +126,8 @@ def main():
             continue
 
         lambdas = data[:, 2 * L]
-        chaotic = lambdas > THRESHOLD_CHAOS
         classes = data[:, 2 * L + 4].astype(int)
+        chaotic = np.isin(classes, CHAOTIC_CLASSES)
 
         points["x"].extend([x] * len(data))
         points["lambda"].extend(lambdas)

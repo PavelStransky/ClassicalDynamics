@@ -47,7 +47,9 @@
 #   2L + 4     Σλ - <div F>, the residual of the trace rule of §4 (question 4; should be ~1e-9)
 #   2L + 5     attractor type: 0 fixed point, 1 limit cycle, 2 torus, 3 chaotic, 4 hyperchaotic,
 #              5 neutral (the whole reduced spectrum is zero - a volume-preserving invariant set,
-#              not an attractor), -1 undetermined
+#              not an attractor), -1 undetermined.  A fixed point is recognised by its final state
+#              being stationary (STATIONARITY_THRESHOLD), so a chaotic transient that has ended is
+#              type 0 here although its window average in column 2L + 1 is still positive
 #   2L + 6     <Σ_j Re(conj(ψ_j) ψ_{j+1})>, the bond coherence (1 on the uniform locked state)
 #   2L + 7     <max_j n_j>   (1/L uniform, ~1 self-trapped)
 #   2L + 8     <Σ_j n_j²>    inverse participation ratio
@@ -101,6 +103,15 @@ end
 # zero (~1e-3 over this window) and below the smallest genuine contraction rate.
 @everywhere const CHAOS_THRESHOLD = 1e-2
 @everywhere const ZERO_THRESHOLD = 2e-3
+
+# A relative fixed point is recognised by the speed of the final state in the reduced space, not by
+# its exponents.  Where it attracts slowly (rates of 1e-3 along η ≈ 1.8) the contraction falls below
+# ZERO_THRESHOLD and the count reads a torus, and a chaotic transient that ends inside the window
+# leaves a positive average behind.  A settled fixed point comes out at 1e-6 to 1e-5 (the norm drift
+# of the integrator, growing with |g| and the run length), while limit cycles, tori and chaotic
+# attractors were never caught below 0.4; what lies between is still spiralling in, and the
+# threshold only decides how far in it must have come.
+@everywhere const STATIONARITY_THRESHOLD = 1e-2
 
 # Grid.  g is the first axis in every mode.
 @everywhere const G_VALUES = LinRange(-50.0, -2.0, 241)
@@ -167,7 +178,8 @@ end
     result = try
         LyapunovSpectrum(RandomInitialCondition(L, rng), parameters;
                          relaxationTime = RELAXATION_TIME, integrationTime = INTEGRATION_TIME,
-                         zeroThreshold = ZERO_THRESHOLD, chaosThreshold = CHAOS_THRESHOLD, rng = rng)
+                         zeroThreshold = ZERO_THRESHOLD, chaosThreshold = CHAOS_THRESHOLD,
+                         stationarityThreshold = STATIONARITY_THRESHOLD, rng = rng)
     catch exception
         @warn "trajectory $index at (g, y) = ($gJittered, $yJittered) failed" exception
         return fill(NaN, 2 * L + 9)
@@ -188,7 +200,9 @@ function LyapunovMap(g, y, indices)
 
     λ = [row[2 * L + 1] for row in result]
     valid = filter(isfinite, λ)
-    chaotic = filter(v -> v > CHAOS_THRESHOLD, valid)
+    # chaotic by attractor TYPE, not by the sign of λ: a transient that has ended is not chaos
+    chaotic = [row for row in result
+               if row[2 * L + 5] in (CLASS_CODES[:chaotic], CLASS_CODES[:hyperchaotic])]
     residuals = filter(isfinite, [abs(row[2 * L + 4]) for row in result])
 
     println("Finished g = $g, $SCAN = $y (L = $L, J = $J, κ = $κ, η = $η, modulation = $MODULATION)")
@@ -199,9 +213,9 @@ function LyapunovMap(g, y, indices)
     end
 
     if length(chaotic) > 0
-        dimensions = [row[2 * L + 2] for row in result if row[2 * L + 1] > CHAOS_THRESHOLD]
         @printf("λ_max = %.4f, D_KY(red) = %.3f (out of %d)\n",
-                mean(chaotic), mean(dimensions), 2 * L - 2)
+                mean(row[2 * L + 1] for row in chaotic), mean(row[2 * L + 2] for row in chaotic),
+                2 * L - 2)
     end
 
     if length(residuals) > 0
@@ -234,6 +248,7 @@ function WriteMetadata()
         println(io, "relaxationTime\t$RELAXATION_TIME")
         println(io, "integrationTime\t$INTEGRATION_TIME")
         println(io, "chaosThreshold\t$CHAOS_THRESHOLD")
+        println(io, "stationarityThreshold\t$STATIONARITY_THRESHOLD")
         println(io, "jitter\t$JITTER")
         println(io, "columns\t$(2 * L + 9)")
         println(io, "gValues\t", join(G_VALUES, ","))
