@@ -23,6 +23,8 @@ docs/site/
 # environment.
 Manifest.toml
 .vscode/launch.json
+.vscode/settings.json
 
 *.pdf
 *.png
+*.md
