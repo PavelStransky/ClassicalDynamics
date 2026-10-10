@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=bhnumcons3
+#SBATCH --job-name=bhnumcons5
 #SBATCH --partition=ffa-preempt        # preemptible partition; a requeued task resumes cleanly (see below)
 #SBATCH --time=2:00:00                 # CELLS_PER_TASK (20) cells x roughly 2-5 min each; tune after a test run
 #SBATCH --nodes=1
@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=1G               # generous margin for DifferentialEquations precompilation; see below
 #SBATCH --array=0-11616%500            # cld(241*241, 5) = 11616 tasks (BHMapNumberConservingChimera.jl prints the exact range)
-#SBATCH --output=/home/%u/results/bh/number-conserving/3/logs/bhnumcons_%a.out
-#SBATCH --error=/home/%u/results/bh/number-conserving/3/logs/bhnumcons_%a.err
+#SBATCH --output=/home/%u/results/bh/number-conserving/5/logs/bhnumcons_%a.out
+#SBATCH --error=/home/%u/results/bh/number-conserving/5/logs/bhnumcons_%a.err
 #SBATCH --mail-user=pavel.stransky@matfyz.cuni.cz
 #SBATCH --mail-type=END,FAIL
 

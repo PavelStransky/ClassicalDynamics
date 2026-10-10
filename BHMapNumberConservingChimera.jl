@@ -96,7 +96,7 @@ end
 # single step either, so it cannot be jittered (NaN makes the assertion below catch it).
 AxisStep(values) = length(values) <= 1 ? 0.0 : values isa AbstractRange ? step(values) : NaN
 
-const L = EnvironmentNumber("BH_L", 4)
+const L = EnvironmentNumber("BH_L", 5)
 const J = 1.0
 const SCAN = Symbol(get(ENV, "BH_SCAN", "eta"))          # :eta | :kappa | :modulation | :J
 
