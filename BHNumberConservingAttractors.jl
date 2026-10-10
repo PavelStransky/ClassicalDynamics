@@ -119,7 +119,7 @@ function LocalMaxima(ψ0, parameters; relaxation = 2000.0, window = 600.0, maxim
     return maximaC, maximaN, final
 end
 
-function Bifurcation(; η = 3.0, gs = collect(-2.0:-0.01:-10.0), randoms = 100, kick = 1e-6)
+function Bifurcation(; η = 1.5, gs = collect(-3.0:-0.01:-8.0), randoms = 100, kick = 1e-6)
     rows = []
     lock_ = ReentrantLock()
 
