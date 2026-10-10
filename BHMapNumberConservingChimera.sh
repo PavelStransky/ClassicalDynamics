@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=bhnumcons3
 #SBATCH --partition=ffa-preempt        # preemptible partition; a requeued task resumes cleanly (see below)
-#SBATCH --time=1:30:00                 # CELLS_PER_TASK (20) cells x roughly 2-5 min each; tune after a test run
+#SBATCH --time=2:00:00                 # CELLS_PER_TASK (20) cells x roughly 2-5 min each; tune after a test run
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
