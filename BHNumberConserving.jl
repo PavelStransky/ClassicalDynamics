@@ -526,6 +526,21 @@ function EquationOfMotion!(du, u, integrationParameters, t)
 end
 
 
+""" Right-hand side of the trajectory ALONE - no deviation vectors, no divergence integral: L
+    components instead of L(2L+1)+1.  LyapunovSpectrum integrates this up to `spinUpTime` before
+    the measurement window, where the transient only has to be waited out and nothing is measured
+    on it. """
+function StateEquationOfMotion!(dψ, ψ, integrationParameters, t)
+    parameters = integrationParameters.model
+    work = integrationParameters.work
+
+    UpdateWorkspace!(work, ψ, parameters)
+    VectorField!(dψ, ψ, parameters, work)
+
+    return nothing
+end
+
+
 """ PeriodicCallback: reorthonormalise the deviation basis and accumulate the growth factors.
 
     Before relaxationTime the basis is still reorthonormalised (otherwise every vector collapses
@@ -731,11 +746,22 @@ end
 
     The exponents and <div F> are averaged over exactly the same window
     (relaxationTime, integrationTime), which is what makes §8.4 a test of the dynamics rather
-    than of the transient. """
+    than of the transient.
+
+    `spinUpTime` is how long before the window opens the deviation vectors are switched on.  Up to
+    relaxationTime - spinUpTime the trajectory is integrated ALONE (StateEquationOfMotion!), which
+    at L = 6 costs about a twentieth per unit of time, so a long relaxation is nearly free: the
+    window 11000 -> 15000 with spinUpTime = 1000 takes 1.07 times as long as 1000 -> 5000, instead
+    of 3 times.  The state is renormalised at the hand-over (the flow conserves the norm exactly,
+    so only the drift of the integrator is removed; it still enters normError), and the basis is
+    drawn there and left spinUpTime to align.  1000 leaves the classification as it is with the
+    basis propagated from t = 0; 200 does not - the count of near-zero exponents moves.  The
+    default spinUpTime = relaxationTime IS the propagation from t = 0. """
 function LyapunovSpectrum(ψ0, parameters;
         deviations = 2 * parameters.L,
         relaxationTime = 2000.0,
         integrationTime = 8000.0,
+        spinUpTime = relaxationTime,
         rescaleStep = 1.0,
         saveStep = 1.0,
         tolerance = 1e-10,
@@ -750,9 +776,32 @@ function LyapunovSpectrum(ψ0, parameters;
     L = parameters.L
     relaxationTime < integrationTime ||
         error("the exponents are accumulated on (relaxationTime, integrationTime)")
+    0 <= spinUpTime <= relaxationTime ||
+        error("the deviation vectors are switched on spinUpTime before relaxationTime")
+
+    integrationParameters = LyapunovIntegrationParameters(
+        parameters, NumberConservingWorkspace(L), deviations, float(relaxationTime),
+        false, float(relaxationTime), 0.0, float(relaxationTime), 0.0, 0,
+        zeros(deviations), Vector{Float64}[], historyLength, 0.0)
+
+    # The trajectory alone up to stateTime, where the deviation vectors are switched on.  The clock
+    # keeps running, so relaxationTime, the saved times and startTime all stay absolute.
+    stateTime = float(relaxationTime - spinUpTime)
+    ψ = ComplexF64.(ψ0) ./ sqrt(sum(abs2, ψ0))
+
+    if stateTime > 0
+        relaxation = solve(ODEProblem(ODEFunction(StateEquationOfMotion!), ψ, (0.0, stateTime),
+                                      integrationParameters), solver;
+                           reltol = tolerance, abstol = tolerance, save_everystep = false,
+                           save_start = false, save_end = true, maxiters = maximumIterations)
+
+        ψ = relaxation.u[end]
+        integrationParameters.maximumNormError = abs(sum(abs2, ψ) - 1)
+        ψ ./= sqrt(sum(abs2, ψ))
+    end
 
     u0 = zeros(ComplexF64, L * (deviations + 1) + 1)
-    u0[1:L] .= ψ0 ./ sqrt(sum(abs2, ψ0))
+    u0[1:L] .= ψ
 
     vectors = [view(u0, (k * L + 1):((k + 1) * L)) for k = 1:deviations]
     for v in vectors
@@ -760,14 +809,9 @@ function LyapunovSpectrum(ψ0, parameters;
     end
     Orthonormalise!(vectors)
 
-    integrationParameters = LyapunovIntegrationParameters(
-        parameters, NumberConservingWorkspace(L), deviations, float(relaxationTime),
-        false, float(relaxationTime), 0.0, float(relaxationTime), 0.0, 0,
-        zeros(deviations), Vector{Float64}[], historyLength, 0.0)
-
     saved = SavedValues(Float64, NTuple{4, Float64})
 
-    problem = ODEProblem(ODEFunction(EquationOfMotion!), u0, (0.0, float(integrationTime)),
+    problem = ODEProblem(ODEFunction(EquationOfMotion!), u0, (stateTime, float(integrationTime)),
                          integrationParameters)
 
     callback = CallbackSet(

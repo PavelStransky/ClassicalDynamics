@@ -59,7 +59,8 @@ include("BHNumberConserving.jl")
 #   BH_G, BH_Y                                         grid axes as "first:last:count", or
 #                                                      "first:last:count:log" for geometric spacing;
 #                                                      count = 1 turns the plane into a cut
-#   BH_TRAJECTORIES, BH_RELAXATION_TIME, BH_INTEGRATION_TIME, BH_JITTER, BH_CELLS_PER_TASK
+#   BH_TRAJECTORIES, BH_RELAXATION_TIME, BH_INTEGRATION_TIME, BH_SPIN_UP_TIME, BH_JITTER,
+#   BH_CELLS_PER_TASK
 #   BH_TAG                                             appended to the results directory, so a cut
 #                                                      or a pinned (JITTER = 0) run never shares a
 #                                                      directory - and a parameters.txt - with a map
@@ -96,7 +97,7 @@ end
 # single step either, so it cannot be jittered (NaN makes the assertion below catch it).
 AxisStep(values) = length(values) <= 1 ? 0.0 : values isa AbstractRange ? step(values) : NaN
 
-const L = EnvironmentNumber("BH_L", 5)
+const L = EnvironmentNumber("BH_L", 4)
 const J = 1.0
 const SCAN = Symbol(get(ENV, "BH_SCAN", "eta"))          # :eta | :kappa | :modulation | :J
 
@@ -106,8 +107,16 @@ const MODULATION = EnvironmentNumber("BH_MODULATION", 0.0)
 
 const TRAJECTORIES = EnvironmentNumber("BH_TRAJECTORIES", 100)
 
-const RELAXATION_TIME = EnvironmentNumber("BH_RELAXATION_TIME", 1000.0)
-const INTEGRATION_TIME = EnvironmentNumber("BH_INTEGRATION_TIME", 5000.0)
+const RELAXATION_TIME = EnvironmentNumber("BH_RELAXATION_TIME", 20000.0)
+const INTEGRATION_TIME = EnvironmentNumber("BH_INTEGRATION_TIME", 25000.0)
+
+# The deviation vectors are switched on only SPIN_UP_TIME before the window opens and the
+# trajectory is integrated alone until then, so a long relaxation is nearly free (see
+# BHMapNumberConserving.jl): BH_RELAXATION_TIME=11000 BH_INTEGRATION_TIME=15000 costs 1.07 times
+# the default window, not 3 times.
+const SPIN_UP_TIME = EnvironmentNumber("BH_SPIN_UP_TIME", 18000.0)
+
+const SOLVER = Vern8()
 
 const CHAOS_THRESHOLD = 1e-2
 const ZERO_THRESHOLD = 2e-3
@@ -133,6 +142,7 @@ const JITTER = EnvironmentNumber("BH_JITTER", 1.0)
 const TAG = get(ENV, "BH_TAG", "")
 
 @assert RELAXATION_TIME < INTEGRATION_TIME "the spectrum is accumulated on (RELAXATION_TIME, INTEGRATION_TIME)"
+@assert 0 <= SPIN_UP_TIME <= RELAXATION_TIME "the deviation vectors are switched on SPIN_UP_TIME before RELAXATION_TIME"
 @assert L >= 3 "L >= 3: chaos is impossible on the 2D reduced space of the dimer (note §4)"
 
 const PATH = get(ENV, "BH_RESULTS_DIR",
@@ -176,6 +186,7 @@ function SingleTrajectory(index, g, y)
     result = try
         LyapunovSpectrum(RandomInitialCondition(L, rng), parameters;
                          relaxationTime = RELAXATION_TIME, integrationTime = INTEGRATION_TIME,
+                         spinUpTime = SPIN_UP_TIME, solver = SOLVER,
                          zeroThreshold = ZERO_THRESHOLD, chaosThreshold = CHAOS_THRESHOLD,
                          stationarityThreshold = STATIONARITY_THRESHOLD, rng = rng)
     catch exception
@@ -250,6 +261,8 @@ function WriteMetadata()
         println(io, "trajectories\t$TRAJECTORIES")
         println(io, "relaxationTime\t$RELAXATION_TIME")
         println(io, "integrationTime\t$INTEGRATION_TIME")
+        println(io, "spinUpTime\t$SPIN_UP_TIME")
+        println(io, "solver\t$(nameof(typeof(SOLVER)))")
         println(io, "chaosThreshold\t$CHAOS_THRESHOLD")
         println(io, "stationarityThreshold\t$STATIONARITY_THRESHOLD")
         println(io, "jitter\t$JITTER")

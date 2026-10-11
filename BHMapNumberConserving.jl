@@ -94,8 +94,21 @@ end
 # approach.  The reduced spectrum is then accumulated over INTEGRATION_TIME - RELAXATION_TIME.
 # 4000 time units give the near-zero exponents about three digits, which is what the classification
 # into fixed point / limit cycle / torus / strange needs.
-@everywhere const RELAXATION_TIME = 1000.0
-@everywhere const INTEGRATION_TIME = 5000.0
+@everywhere const RELAXATION_TIME = 20000.0
+@everywhere const INTEGRATION_TIME = 25000.0
+
+# The deviation vectors are switched on only SPIN_UP_TIME before the window opens; until then the
+# trajectory is integrated alone, at about a twentieth of the cost per unit of time (L = 6).  That
+# is what makes a long relaxation affordable - 11000 -> 15000 costs 1.07 times what 1000 -> 5000
+# does, not 3 times - and a long relaxation is needed wherever chaos coexists with regular
+# attractors: the chaotic transients there outlive 1000 time units and are counted as chaos.
+# 1000 is what the basis had to align in before; with SPIN_UP_TIME = RELAXATION_TIME it is
+# propagated from t = 0.
+@everywhere const SPIN_UP_TIME = 18000.0
+
+# Vern8 is about a tenth faster than DP8 at the tolerance of LyapunovSpectrum (L = 6) and drifts
+# less in the norm.
+@everywhere const SOLVER = Vern8()
 
 # A limit cycle gives exactly one zero in the reduced spectrum, a torus two, a strange attractor a
 # positive exponent.  At these constants the chaotic attractors run from +0.1 to +1.8, so the gap
@@ -134,6 +147,7 @@ end
 @everywhere const JITTER = 1.0
 
 @assert RELAXATION_TIME < INTEGRATION_TIME "the spectrum is accumulated on (RELAXATION_TIME, INTEGRATION_TIME)"
+@assert 0 <= SPIN_UP_TIME <= RELAXATION_TIME "the deviation vectors are switched on SPIN_UP_TIME before RELAXATION_TIME"
 @assert L >= 3 "L >= 3: chaos is impossible on the 2D reduced space of the dimer (note §4)"
 
 const PATH = get(ENV, "BH_RESULTS_DIR",
@@ -178,6 +192,7 @@ end
     result = try
         LyapunovSpectrum(RandomInitialCondition(L, rng), parameters;
                          relaxationTime = RELAXATION_TIME, integrationTime = INTEGRATION_TIME,
+                         spinUpTime = SPIN_UP_TIME, solver = SOLVER,
                          zeroThreshold = ZERO_THRESHOLD, chaosThreshold = CHAOS_THRESHOLD,
                          stationarityThreshold = STATIONARITY_THRESHOLD, rng = rng)
     catch exception
@@ -247,6 +262,8 @@ function WriteMetadata()
         println(io, "trajectories\t$TRAJECTORIES")
         println(io, "relaxationTime\t$RELAXATION_TIME")
         println(io, "integrationTime\t$INTEGRATION_TIME")
+        println(io, "spinUpTime\t$SPIN_UP_TIME")
+        println(io, "solver\t$(nameof(typeof(SOLVER)))")
         println(io, "chaosThreshold\t$CHAOS_THRESHOLD")
         println(io, "stationarityThreshold\t$STATIONARITY_THRESHOLD")
         println(io, "jitter\t$JITTER")

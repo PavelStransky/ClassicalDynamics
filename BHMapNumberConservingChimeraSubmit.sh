@@ -66,7 +66,8 @@ Count() { echo "$1" | cut -d: -f3; }
 # exported in the login shell would otherwise leak into the job (BH_RESULTS_DIR would even send
 # every preset into the same directory).
 unset BH_L BH_SCAN BH_KAPPA BH_ETA BH_MODULATION BH_G BH_Y BH_TRAJECTORIES BH_RELAXATION_TIME \
-      BH_INTEGRATION_TIME BH_JITTER BH_CELLS_PER_TASK BH_TAG BH_RESULTS_DIR BH_LOG_DIR
+      BH_INTEGRATION_TIME BH_SPIN_UP_TIME BH_JITTER BH_CELLS_PER_TASK BH_TAG BH_RESULTS_DIR \
+      BH_LOG_DIR
 scan=eta
 export BH_ETA=3.0          # the fixed η of the scans in g and κ; swept by the η scans
 
