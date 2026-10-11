@@ -114,7 +114,7 @@ const INTEGRATION_TIME = EnvironmentNumber("BH_INTEGRATION_TIME", 25000.0)
 # trajectory is integrated alone until then, so a long relaxation is nearly free (see
 # BHMapNumberConserving.jl): BH_RELAXATION_TIME=11000 BH_INTEGRATION_TIME=15000 costs 1.07 times
 # the default window, not 3 times.
-const SPIN_UP_TIME = EnvironmentNumber("BH_SPIN_UP_TIME", 18000.0)
+const SPIN_UP_TIME = EnvironmentNumber("BH_SPIN_UP_TIME", 2000.0)
 
 const SOLVER = Vern8()
 
