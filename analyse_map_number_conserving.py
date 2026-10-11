@@ -62,7 +62,7 @@ CHAOTIC_CLASSES = (3, 4)
 TOLERANCE = 0.08
 
 PATH = sys.argv[1] if len(sys.argv) > 1 else \
-    os.path.join(os.path.expanduser("~"), "results", "bh", "number-conserving", "3", "eta",
+    os.path.join(os.path.expanduser("~"), "results", "bh", "number-conserving", "4", "eta",
                  "J_1.000_k_0.300_e_3.000_m_0.000")
 
 AXIS_LABELS = {"eta": "$\\eta$", "kappa": "$\\kappa$", "modulation": "rate modulation",
