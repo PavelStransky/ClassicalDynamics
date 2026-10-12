@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=bhnumcons4
+#SBATCH --job-name=bhnumcons6
 #SBATCH --partition=ffa-preempt        # preemptible partition; a requeued task resumes cleanly (see below)
 #SBATCH --time=2:00:00                 # CELLS_PER_TASK (20) cells x roughly 2-5 min each; tune after a test run
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=1G               # generous margin for DifferentialEquations precompilation; see below
-#SBATCH --array=0-11616%500            # cld(241*241, 5) = 11616 tasks (BHMapNumberConservingChimera.jl prints the exact range)
-#SBATCH --output=/home/%u/results/bh/number-conserving/4/logs/bhnumcons_%a.out
-#SBATCH --error=/home/%u/results/bh/number-conserving/4/logs/bhnumcons_%a.err
+#SBATCH --array=0-14520%500            # cld(241*241, 4) = 14520 tasks (BHMapNumberConservingChimera.jl prints the exact range)
+#SBATCH --output=/home/%u/results/bh/number-conserving/6/logs/bhnumcons_%a.out
+#SBATCH --error=/home/%u/results/bh/number-conserving/6/logs/bhnumcons_%a.err
 #SBATCH --mail-user=pavel.stransky@matfyz.cuni.cz
 #SBATCH --mail-type=END,FAIL
 
@@ -140,7 +140,7 @@ set -euo pipefail
 # (identically) when warming the cache interactively -- see the note above.
 export JULIA_CPU_TARGET=generic
 
-mkdir -p "${BH_LOG_DIR:-$HOME/results/bh/number-conserving/4/logs}"
+mkdir -p "${BH_LOG_DIR:-$HOME/results/bh/number-conserving/6/logs}"
 
 cd "$SLURM_SUBMIT_DIR"
 

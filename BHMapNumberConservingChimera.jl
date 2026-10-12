@@ -97,7 +97,7 @@ end
 # single step either, so it cannot be jittered (NaN makes the assertion below catch it).
 AxisStep(values) = length(values) <= 1 ? 0.0 : values isa AbstractRange ? step(values) : NaN
 
-const L = EnvironmentNumber("BH_L", 4)
+const L = EnvironmentNumber("BH_L", 6)
 const J = 1.0
 const SCAN = Symbol(get(ENV, "BH_SCAN", "eta"))          # :eta | :kappa | :modulation | :J
 
@@ -296,7 +296,7 @@ end
 # flattened (g, y) grid. A cell is TRAJECTORIES full spectra; on the desktop (i9-13900HX) one
 # trajectory of the default integration window costs about 1 CPU-s at L = 3, so a cell is roughly
 # 2 min and a block of 20 about 40 min, before the JULIA_CPU_TARGET=generic penalty.
-const CELLS_PER_TASK = EnvironmentNumber("BH_CELLS_PER_TASK", 5)
+const CELLS_PER_TASK = EnvironmentNumber("BH_CELLS_PER_TASK", 4)
 
 const N_Y = length(Y_VALUES)
 const TOTAL_CELLS = length(G_VALUES) * N_Y
