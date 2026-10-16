@@ -19,10 +19,15 @@ Items of number-conserving-BH-paper-TODO.md:
     eta0    C2           statistics of the parity-resolved sectors along eta = 0, and the fraction
                          of exactly real eigenvalues in each (the fingerprint of the antiunitary
                          symmetry, which A1 has to interpret).
+    moving  -            the statistics in a band of Re λ sliding along the real axis, against the
+                         band centre, for every N in the table written by
+                         `julia BHNumberConservingLiouvillianAnalysis.jl moving` (same options).
 
 Usage:
     python analyse_liouvillian_number_conserving.py plane [--classical <classical map dir>]
     python analyse_liouvillian_number_conserving.py cuts | gap | eta0
+    python analyse_liouvillian_number_conserving.py moving [--g -20,-30 --eta 4,5 --kappa 0.3
+                                                            --sector m1 --width 2 --step 1]
 Options: --results <dir> (default ~/results/bh/number-conserving/quantum/3), --no-show
 """
 
@@ -256,8 +261,49 @@ def eta0():
     finish("quantum_eta0")
 
 
+def moving():
+    """One figure for every combination of the comma-separated --g and --eta lists."""
+    kappa = float(option("--kappa", KAPPA))
+    for g in (float(v) for v in option("--g", "-20").split(",")):
+        for eta in (float(v) for v in option("--eta", "5").split(",")):
+            moving_at(g, eta, kappa)
+
+
+def moving_at(g, eta, kappa):
+    sector = option("--sector", "m1")
+    width = float(option("--width", 2))
+    step = float(option("--step", width / 2))
+    name = f"moving_g{g:g}_e{eta:g}_k{kappa:g}_{sector}_W{width:g}_step{step:g}"
+    data = np.atleast_1d(np.genfromtxt(os.path.join(RESULTS, "analysis", f"{name}.txt"), names=True))
+    Ns = np.unique(data["N"]).astype(int)
+
+    figure, axes = plt.subplots(4, 1, figsize=(9, 12), sharex=True)
+    for colour, N in zip(plt.cm.viridis(np.linspace(0, 0.85, len(Ns))), Ns):
+        d = data[data["N"] == N]
+        axes[0].semilogy(d["centre"], np.maximum(d["n"], 0.8), "o-", ms=2.5, lw=1, color=colour,
+                         label=f"N = {N}")
+        for ax, statistic in zip(axes[1:], ("r", "cos", "var")):
+            ax.plot(d["centre"], d[statistic], "o-", ms=2.5, lw=1, color=colour)
+            ax.fill_between(d["centre"], d[statistic] - d[f"{statistic}_err"],
+                            d[statistic] + d[f"{statistic}_err"], color=colour, alpha=0.2, lw=0)
+            ax.plot(d["centre"], d[f"{statistic}_control"], "--", lw=1, color=colour)
+    for ax, statistic in zip(axes[1:], ("r", "cos", "var")):
+        ax.axhline(GINIBRE[statistic], color="r", ls="--", lw=1)
+        ax.axhline(POISSON[statistic], color="k", ls=":", lw=1)
+        ax.set_ylabel(LABELS[statistic])
+    axes[0].set_ylabel("eigenvalues in the band")
+    axes[0].legend(fontsize=8)
+    axes[1].plot([], [], "k--", lw=1, label="elliptic Ginibre, same quantiles of Re λ")
+    axes[1].plot([], [], "r--", lw=1, label="Ginibre")
+    axes[1].plot([], [], "k:", lw=1, label="2D Poisson")
+    axes[1].legend(fontsize=8)
+    axes[-1].set_xlabel(f"band centre Re λ  (band width {width:g}, step {step:g})")
+    axes[0].set_title(f"g = {g:g}, η = {eta:g}, κ = {kappa:g}, sector {sector}")
+    finish(f"quantum_{name}")
+
+
 if __name__ == "__main__":
-    commands = {"plane": plane, "cuts": cuts, "gap": gap, "eta0": eta0}
+    commands = {"plane": plane, "cuts": cuts, "gap": gap, "eta0": eta0, "moving": moving}
     command = sys.argv[1] if len(sys.argv) > 1 else ""
     if command not in commands:
         print(__doc__)

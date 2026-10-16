@@ -259,6 +259,35 @@ def PlotClasses():
     plt.show()
 
 
+def PlotAttractors():
+    """How many distinct attractors coexist - question 3 of section 8. The count is an integer, so
+    each value has a colour of its own and can be read off the map: a dark base for a single
+    attractor, then spectral order from blue to purple. The lightness of every step is tuned so
+    that any two colours stay apart for colour-blind readers as well. The last colour collects its
+    count and everything above it."""
+    colors = ["#2e2e3a", "#0080e5", "#2be4f0", "#4c910a", "#f6f01a", "#f0a060", "#af2938",
+              "#f230ac", "#5b26a7", "#a9a4f7"]
+    top = len(colors)
+    counts = list(range(1, top + 1))
+
+    plt.figure(figsize=FIGSIZE)
+    plt.pcolormesh(gs, ys, np.transpose(np.minimum(attractors, top)), shading="auto",
+                   cmap=ListedColormap(colors),
+                   norm=BoundaryNorm([c - 0.5 for c in counts] + [top + 0.5], top))
+    colorbar = plt.colorbar(ticks=counts, label="coexisting attractors")
+    colorbar.ax.set_yticklabels([str(c) for c in counts[:-1]] + [f"$\\geq${top}"])
+    PlotThreshold()
+    plt.title(Title("multistability"))
+    plt.xlabel("$g$")
+    plt.ylabel(AXIS_LABELS.get(SCAN, SCAN))
+    plt.xlim(gs[0], gs[-1])
+    plt.ylim(ys[0], ys[-1])
+    plt.tight_layout()
+    plt.savefig(f"attractors_{STEM}.png", dpi=150)
+    plt.savefig(f"attractors_{STEM}.pdf")
+    plt.show()
+
+
 PlotMap(chaotic_fraction, "chaotic fraction", "fraction of initial conditions reaching chaos",
         "chaotic_fraction", vmin=0, vmax=1)
 PlotMap(lyapunov_max, "$\\lambda_\\max$", "largest exponent found", "lyapunov_max",
@@ -270,7 +299,7 @@ PlotMap(lyapunov_chaotic, "$\\langle\\lambda_\\max\\rangle$ over chaotic traject
 PlotMap(dimension_chaotic, f"$D_{{KY}}$ (reduced, out of {2 * L - 2})",
         "Kaplan-Yorke dimension of the strange attractor", "dimension",
         vmin=0, vmax=2 * L - 2)
-PlotMap(attractors, "coexisting attractors", "multistability", "attractors", vmin=1)
+PlotAttractors()
 PlotMap(locked_fraction, "basin fraction", "share ending on the uniform locked condensate",
         "locked_fraction", vmin=0, vmax=1)
 PlotMap(divergence, "$\\langle$div $F\\rangle$", "mean phase-space contraction", "divergence",

@@ -24,11 +24,15 @@
 #   asymmetric  C11    Gamma_- = Gamma_+ / 2 (Gsym = eta / N) at the chaotic point, N = 8 ... 16
 #   dsff        C10    N = 12, 41 values of g in [-20.5, -19.5] at eta = 3: the ensemble over
 #                      which the dissipative spectral form factor is averaged
+#   points      -      any (g, eta) the user asks for: every combination of --g and --eta (and
+#                      --kappa, default 0.3), N = 12, 14, 16 unless --N is given; sectors 0 and 1,
+#                      eigenvalues saved, reflection parity resolved where eta = 0
 #
 # Usage (from the repository root; everything is resumable - points already in the table are
 # skipped, so an interrupted run is simply restarted):
 #
 #   julia BHNumberConservingLiouvillianMap.jl <task> [--workers n] [--memory GB] [--N 8,10] [--stride k]
+#   julia BHNumberConservingLiouvillianMap.jl points --g -30,-15 --eta 4,5 [--kappa 0.3] [--N 12,14,16]
 #
 # --workers  number of worker processes (default 20, capped at the number of CPU threads - 2)
 # --memory   RAM the running points may hold together, in GB (default: 70% of the machine).  Each
@@ -62,7 +66,7 @@ using Distributed
 using Printf
 
 const TASKS = ("plane", "cut-eta3", "cut-g20", "eta0", "reference", "kappa", "kappa0",
-               "asymmetric", "dsff")
+               "asymmetric", "dsff", "points")
 
 const RESULTS = get(ENV, "BH_RESULTS_DIR",
     joinpath(homedir(), "results", "bh", "number-conserving", "quantum", "3"))
@@ -93,8 +97,9 @@ const REFERENCE_POINTS = ((-20.0, 3.0), (-20.0, 1.0), (-20.0, 0.0), (-4.0, 3.0))
 """ The points of a task.  `Ns` replaces the task's own list of boson numbers (the default lists
     are the ones sized for the laptop; IPNP36 runs the same tasks at larger N), and `stride` keeps
     every stride-th value of the task's g axis (and of the η axis of the plane) - so that, e.g., the
-    plane can be done at N = 14 on every second point of the classical grid. """
-function TaskPoints(task; Ns = nothing, stride = 1)
+    plane can be done at N = 14 on every second point of the classical grid.  `gs`, `ηs` and `κ`
+    are read only by the task points, which has no parameter axes of its own. """
+function TaskPoints(task; Ns = nothing, stride = 1, gs = nothing, ηs = nothing, κ = 0.3)
     Pick(values) = collect(values)[1:stride:end]
     Numbers(default) = isnothing(Ns) ? default : Ns
 
@@ -134,6 +139,10 @@ function TaskPoints(task; Ns = nothing, stride = 1)
 
     elseif task == "dsff"
         return [Point(N, g, 3.0; only = [1]) for N in Numbers([12]) for g in LinRange(-20.5, -19.5, 41)]
+
+    elseif task == "points"
+        (isnothing(gs) || isnothing(ηs)) && error("task points needs --g and --eta, e.g. --g -30,-15 --eta 4,5")
+        return [Point(N, g, η; κ = κ, parity = η == 0) for N in Numbers([12, 14, 16]) for g in gs for η in ηs]
     end
 
     error("unknown task $task; one of $(join(TASKS, ", "))")
@@ -161,7 +170,7 @@ PointCost(point) = (binomial(point.N + 2, 2)^2 / 3)^3 * (isnothing(point.only) ?
 function Arguments(arguments)
     options = Dict("workers" => string(clamp(Sys.CPU_THREADS - 2, 1, 20)),
                    "memory" => string(round(0.7 * Sys.total_memory() / 1e9, digits = 1)),
-                   "N" => "", "stride" => "1")
+                   "N" => "", "stride" => "1", "g" => "", "eta" => "", "kappa" => "0.3")
     task = ""
     i = 1
     while i <= length(arguments)
@@ -285,8 +294,10 @@ function Run()
     spectraDirectory = joinpath(RESULTS, "spectra", TASK)
     mkpath(spectraDirectory)
 
+    List(name) = isempty(OPTIONS[name]) ? nothing : parse.(Float64, split(OPTIONS[name], ','))
     points = TaskPoints(TASK; Ns = isempty(OPTIONS["N"]) ? nothing : parse.(Int, split(OPTIONS["N"], ',')),
-                        stride = parse(Int, OPTIONS["stride"]))
+                        stride = parse(Int, OPTIONS["stride"]), gs = List("g"), ηs = List("eta"),
+                        κ = parse(Float64, OPTIONS["kappa"]))
 
     done = ReadDone(table)
     queue = sort([p for p in points if !(PointKey(p) in done)], by = PointCost, rev = true)

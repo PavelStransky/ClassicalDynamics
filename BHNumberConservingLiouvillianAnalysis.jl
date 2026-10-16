@@ -23,6 +23,12 @@
 #                   what rho -> rho^dag or reflection∘dag gives), complex symmetric (AI^dag, a
 #                   transposition-type one); for AI both over the whole bulk and away from the real
 #                   axis, where the eigenvalues accumulate.
+#   moving     -    the statistics in a band of width W of Re λ sliding along the real axis, with an
+#                   elliptic-Ginibre control cut at the same quantiles of Re λ (MovingWindow).
+#                   Options --g --eta (comma lists; every combination), --kappa (default -20, 5,
+#                   0.3), --width W (2), --step (W/2), --sector m1 | m0, --minimum (30),
+#                   --realizations (8, 0 = none), --task (default: search every spectra directory;
+#                   a point no task has saved is computed by BHNumberConservingLiouvillianMap.jl points).
 #
 # USAGE   julia -t 8 BHNumberConservingLiouvillianAnalysis.jl <command> [--N 14,16]
 # INPUT   $BH_RESULTS_DIR/spectra/<task>/... (default ~/results/bh/number-conserving/quantum/3)
@@ -45,6 +51,17 @@ const WINDOW_ORDER = ("bulk", "w8", "w12", "w16")
 SpectrumPath(task, N, g, η; κ = 0.3, Γsym = 0.0, label = "m1") =
     joinpath(ANALYSIS_RESULTS, "spectra", task,
              @sprintf("L3_N%02d_g%.4f_e%.4f_k%.4f_s%.6f_%s.txt", N, g, η, κ, Γsym, label))
+
+""" The saved spectrum of a point from whichever task computed it (`task = nothing`: every task
+    directory is searched), or nothing. """
+function FindSpectrum(task, N, g, η; κ = 0.3, label = "m1")
+    tasks = isnothing(task) ? readdir(joinpath(ANALYSIS_RESULTS, "spectra")) : [task]
+    for t in tasks
+        file = SpectrumPath(t, N, g, η; κ = κ, label = label)
+        isfile(file) && return file
+    end
+    return nothing
+end
 
 function ReadValues(file)
     values = ComplexF64[]
@@ -74,18 +91,23 @@ end
 # Per-eigenvalue quantities, so that resampling does not repeat the neighbour search
 # ---------------------------------------------------------------------------------------------
 
-""" Unfolded spacings and complex ratios of the selected eigenvalues (bulk: the `keep` densest;
-    window: Re λ >= cut), exactly as NearestNeighbourSpacings / ComplexSpacingRatios select them. """
-function Selected(values, cut; neighbours = 30, keep = 0.5)
+""" Unfolded spacing, complex ratio and local scale of EVERY eigenvalue (the steady state removed),
+    with the neighbours found in the full set - a selection is then only an index into these. """
+function PerEigenvalue(values; neighbours = 30)
     values = filter(z -> abs(z) > 1e-8, values)
     distances, nearest, next = NeighbourData(values, neighbours)
     scale = distances[:, neighbours] ./ sqrt(neighbours / pi)
-    spacings = distances[:, 1] ./ scale
     ratios = [(values[nearest[i]] - values[i]) / (values[next[i]] - values[i]) for i in eachindex(values)]
+    return (values = values, scale = scale, spacings = distances[:, 1] ./ scale, ratios = ratios)
+end
 
-    index = isnothing(cut) ? sortperm(scale)[1:max(1, round(Int, keep * length(values)))] :
-                             findall(z -> real(z) >= cut, values)
-    return spacings[index], ratios[index]
+""" Unfolded spacings and complex ratios of the selected eigenvalues (bulk: the `keep` densest;
+    window: Re λ >= cut), exactly as NearestNeighbourSpacings / ComplexSpacingRatios select them. """
+function Selected(values, cut; neighbours = 30, keep = 0.5)
+    e = PerEigenvalue(values; neighbours = neighbours)
+    index = isnothing(cut) ? sortperm(e.scale)[1:max(1, round(Int, keep * length(e.values)))] :
+                             findall(z -> real(z) >= cut, e.values)
+    return e.spacings[index], e.ratios[index]
 end
 
 Statistic(spacings, ratios) = (r = mean(abs, ratios), cos = -mean(cos ∘ angle, ratios),
@@ -241,6 +263,121 @@ end
 
 
 # ---------------------------------------------------------------------------------------------
+# Moving window along the real axis
+# ---------------------------------------------------------------------------------------------
+
+""" Statistics of the eigenvalues in a BAND  upper - width <= Re λ <= upper  that slides along the
+    real axis, upper = 0, -step, -2 step, ... to the far end of the sector.  The half-plane cuts
+    Re λ >= -w of WindowScan always contain the slowest modes together with everything above the
+    cut, so they cannot say WHERE along the real axis the statistics change; a band can.
+
+    The neighbours are found in the full sector, so the band puts no artificial edge into the point
+    set (SelectReferences).  What it cannot remove is the cloud's own edge: the first bands ARE the
+    leading edge, where every ensemble departs from its bulk values.  The control columns measure
+    that - elliptic Ginibre clouds of the sector's aspect ratio (Im extent / Re extent), cut into the
+    band holding the SAME QUANTILES of Re λ, ratios pooled over `realizations` clouds.  The
+    Liouvillian density is skewed along Re λ, with a long thin tail towards the steady state, so in
+    the slow tail the control is a cap of a sharp-edged cloud: it is a yardstick for the edge effect,
+    not a prediction of the Liouvillian's chaotic value there.  For the self-conjugate sector m0 the
+    reference class is AI-dagger, not the Ginibre class of the control.
+
+    The density varies by two orders of magnitude along the axis and so does the count per band;
+    bands with fewer than `fewest` eigenvalues get NaN statistics.  The error bars are a bootstrap
+    over the eigenvalues of the band, which ignores the correlation of neighbouring ratios and is
+    therefore a lower bound. """
+const CONTROL_CLOUDS = Dict{Tuple{Float64, Int, Int}, Any}()     # (aspect, realizations, dimension)
+
+function MovingWindow(Ns; g = -20.0, η = 5.0, κ = 0.3, task = nothing, sector = "m1",
+        width = 2.0, step = width / 2, fewest = 30, realizations = 8, dimension = 3000)
+
+    rows = []
+
+    for N in Ns
+        file = FindSpectrum(task, N, g, η; κ = κ, label = sector)
+        if isnothing(file)
+            @printf("\nN = %d, g = %g, η = %g, κ = %g: no saved spectrum - compute it with\n    julia BHNumberConservingLiouvillianMap.jl points --g %g --eta %g --kappa %g --N %d\n",
+                    N, g, η, κ, g, η, κ, N)
+            continue
+        end
+        e = PerEigenvalue(ReadValues(file))
+        re = real.(e.values)
+        total = length(re)
+        aspect = round((maximum(imag, e.values) - minimum(imag, e.values)) / (maximum(re) - minimum(re)),
+                       digits = 1)
+
+        control = realizations == 0 ? [] : get!(CONTROL_CLOUDS, (aspect, realizations, dimension)) do
+            map(1:realizations) do k
+                cloud = PerEigenvalue(EllipticCloud(dimension, aspect, Xoshiro(hash((aspect, k)))))
+                (cloud = cloud, order = sortperm(real.(cloud.values), rev = true))
+            end
+        end
+
+        @printf("\nN = %d, g = %g, η = %g, κ = %g, %s: %d eigenvalues, Re λ from %.2f to %.2f, aspect %.1f; band width %g, step %g\n    (%s)\n",
+                N, g, η, κ, sector, total, minimum(re), maximum(re), aspect, width, step, file)
+        println("    Re λ band             n    <|z|>          -<cos>          var(s)          P(s<1/2) | control <|z|>  -<cos>   var")
+
+        for upper in 0.0:(-step):minimum(re)
+            lower = upper - width
+            index = findall(x -> lower <= x <= upper, re)
+            n = length(index)
+            row = Any[N, upper, lower, upper - width / 2, n]
+
+            if n < fewest
+                push!(rows, vcat(row, fill(NaN, 11)))
+                continue
+            end
+
+            spacings, ratios = e.spacings[index], e.ratios[index]
+            s = Statistic(spacings, ratios)
+            b = Bootstrap(spacings, ratios; samples = 400)
+            small = count(<(0.5), spacings ./ mean(spacings)) / n
+
+            # the same quantiles of Re λ in every control cloud
+            from, to = count(>(upper), re) / total, count(>=(lower), re) / total
+            controlSpacings, controlRatios = Float64[], ComplexF64[]
+            for c in control
+                m = length(c.order)
+                pick = c.order[(round(Int, from * m) + 1):round(Int, to * m)]
+                isempty(pick) && continue
+                append!(controlSpacings, c.cloud.spacings[pick] ./ mean(c.cloud.spacings[pick]))
+                append!(controlRatios, c.cloud.ratios[pick])
+            end
+            ctrl = length(controlRatios) >= fewest ? Statistic(controlSpacings, controlRatios) :
+                                                     (r = NaN, cos = NaN, var = NaN, n = length(controlRatios))
+
+            append!(row, [s.r, b.r, s.cos, b.cos, s.var, b.var, small, ctrl.n, ctrl.r, ctrl.cos, ctrl.var])
+            push!(rows, row)
+            @printf("  [%6.1f, %6.1f]  %5d   %.4f ± %.4f  %.4f ± %.4f  %.4f ± %.4f  %.3f    |  %.4f  %.4f  %.4f\n",
+                    lower, upper, n, s.r, b.r, s.cos, b.cos, s.var, b.var, small, ctrl.r, ctrl.cos, ctrl.var)
+        end
+    end
+
+    @printf("  Ginibre (A): <|z|> %.4f  -<cos> %.4f  var(s) %.4f;  2D Poisson: %.4f  %.4f  %.4f;  AI-dagger: 0.722  0.193\n",
+            REFERENCE.ginibreRadius, REFERENCE.ginibreCosine, REFERENCE.ginibreVariance,
+            REFERENCE.poissonRadius, REFERENCE.poissonCosine, REFERENCE.poissonVariance)
+
+    isempty(rows) && return nothing
+    WriteRows(@sprintf("moving_g%g_e%g_k%g_%s_W%g_step%g.txt", g, η, κ, sector, width, step),
+              ["N", "upper", "lower", "centre", "n", "r", "r_err", "cos", "cos_err", "var", "var_err",
+               "small", "n_control", "r_control", "cos_control", "var_control"], rows)
+end
+
+""" `moving` on every combination of the comma-separated --g and --eta lists, one table each. """
+function MovingCommand(Ns, options)
+    Option(name, default) = haskey(options, name) ? parse(Float64, options[name]) : default
+    List(name, default) = haskey(options, name) ? parse.(Float64, split(options[name], ',')) : [default]
+    width = Option("width", 2.0)
+    for g in List("g", -20.0), η in List("eta", 5.0)
+        MovingWindow(Ns; g = g, η = η, κ = Option("kappa", 0.3),
+                     task = get(options, "task", nothing), sector = get(options, "sector", "m1"),
+                     width = width, step = Option("step", width / 2),
+                     fewest = round(Int, Option("minimum", 30.0)),
+                     realizations = round(Int, Option("realizations", 8.0)))
+    end
+end
+
+
+# ---------------------------------------------------------------------------------------------
 # C10 dissipative spectral form factor
 # ---------------------------------------------------------------------------------------------
 
@@ -362,5 +499,6 @@ if abspath(PROGRAM_FILE) == @__FILE__
     command == "edge" ? Edge(Ns) :
     command == "dsff" ? DSFF() :
     command == "classes" ? Classes() :
-    println("usage: julia -t 8 BHNumberConservingLiouvillianAnalysis.jl tables | unfolding | edge | dsff | classes [--N 12,14,16]")
+    command == "moving" ? MovingCommand(Ns, options) :
+    println("usage: julia -t 8 BHNumberConservingLiouvillianAnalysis.jl tables | unfolding | edge | dsff | classes | moving [--N 12,14,16]")
 end
